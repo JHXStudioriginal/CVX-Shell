@@ -13,4 +13,3 @@ void print_prompt(void);
 const char* get_prompt(void);
 
 #endif
-
