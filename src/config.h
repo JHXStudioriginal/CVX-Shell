@@ -19,6 +19,7 @@ extern bool history_enabled;
 extern char start_dir[1024];
 
 void config(void);
+void check_and_reload_config(void);
 
 #endif
 
