@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
          strcmp(argv[1], "-v") == 0 ||
          strcmp(argv[1], "-version") == 0)) {
 
-        printf("CVX Shell beta 0.8.4\n");
+        printf("CVX Shell beta 0.8.5\n");
         printf("Copyright (C) 2025 JHX Studio's\n");
         printf("License: Elasna Open Source License v2\n");
         return 0;
@@ -177,11 +177,42 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     
-        char line[4096];
-        while (fgets(line, sizeof(line), f)) {
-            line[strcspn(line, "\n")] = 0;
-            if (line[0] != '\0')
-                process_command_line(line);
+        char line_buf[4096];
+        char *full_line = NULL;
+        size_t full_len = 0;
+
+        while (fgets(line_buf, sizeof(line_buf), f)) {
+            check_and_reload_config();
+            line_buf[strcspn(line_buf, "\r\n")] = 0;
+            
+            char *p = line_buf + strlen(line_buf);
+            while (p > line_buf && (*(p-1) == ' ' || *(p-1) == '\t')) p--;
+            *p = '\0';
+
+            size_t len = strlen(line_buf);
+            if (len > 0 && line_buf[len-1] == '\\') {
+                line_buf[len-1] = '\0';
+                len--;
+                
+                char *new_full = realloc(full_line, full_len + len + 1);
+                if (new_full) {
+                    full_line = new_full;
+                    memcpy(full_line + full_len, line_buf, len);
+                    full_len += len;
+                    full_line[full_len] = '\0';
+                }
+            } else {
+                size_t new_len = full_len + len + 1;
+                char *new_full = realloc(full_line, new_len);
+                if (new_full) {
+                    full_line = new_full;
+                    memcpy(full_line + full_len, line_buf, len + 1);
+                    process_command_line(full_line);
+                }
+                free(full_line);
+                full_line = NULL;
+                full_len = 0;
+            }
         }
         fclose(f);
         return 0;
@@ -189,8 +220,6 @@ int main(int argc, char *argv[]) {
 
     char *line;
     setenv("TERM", "xterm", 1);
-
-    config();
 
     setup_signals();
 
@@ -206,11 +235,62 @@ int main(int argc, char *argv[]) {
     linenoiseHistoryLoad(history_path);
     getcwd(current_dir, sizeof(current_dir));
 
+    config();
+
+    linenoiseSetMultiLine(1);
+
     while (1) {
+        check_and_reload_config();
         const char *prompt = get_prompt();
-        line = linenoise(prompt);
-        if (line == NULL)
-            break;
+        char *full_line = NULL;
+        size_t full_len = 0;
+
+        while (1) {
+            line = linenoise(full_line == NULL ? prompt : "> ");
+            if (line == NULL) {
+                if (full_line) free(full_line);
+                goto end_shell;
+            }
+
+            
+            char *p = line + strlen(line);
+            while (p > line && (*(p-1) == ' ' || *(p-1) == '\t')) p--;
+            *p = '\0';
+
+            size_t len = strlen(line);
+            if (len > 0 && line[len - 1] == '\\') {
+                line[len - 1] = '\0';
+                len--;
+
+                size_t new_len = full_len + len + 1;
+                char *new_full = realloc(full_line, new_len);
+                if (!new_full) {
+                    perror("realloc");
+                    free(line);
+                    break;
+                }
+                full_line = new_full;
+                memcpy(full_line + full_len, line, len);
+                full_len += len;
+                full_line[full_len] = '\0';
+                free(line);
+                continue;
+            } else {
+                size_t new_len = full_len + len + 1;
+                char *new_full = realloc(full_line, new_len);
+                if (!new_full) {
+                    perror("realloc");
+                    free(line);
+                    break;
+                }
+                full_line = new_full;
+                memcpy(full_line + full_len, line, len + 1);
+                free(line);
+                break;
+            }
+        }
+
+        line = full_line;
     
         bool expanded = false;
     
@@ -227,7 +307,6 @@ int main(int argc, char *argv[]) {
             printf("%s\n", line);
         }
     
-        line[strcspn(line, "\n")] = 0;
     
         if (strcmp(line, "exit") == 0) {
             free(line);
@@ -254,5 +333,6 @@ int main(int argc, char *argv[]) {
         free(line);
     }
     
+    end_shell:
     return 0;
 }    
