@@ -3,6 +3,8 @@
 // All original author information and file headers must be preserved.
 // For full license text, see: [https://github.com/JHXStudioriginal/Elasna-License/blob/main/LICENSE]
 
+#include "signals.h"
+#include "config.h"
 #include "commands.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +17,6 @@
 #include <sys/wait.h>
 #include <ctype.h>
 
-extern char current_dir[1024];
 char previous_dir[1024] = "";
 
 static int parse_job_id(const char *arg) {
@@ -282,6 +283,110 @@ int cmd_bg(int argc, char **argv) {
 
     kill(-pgid, SIGCONT);
     jobs_set_state(pgid, JOB_RUNNING);
+
+    return 0;
+}
+
+static void alias_usage() {
+    printf("Usage: alias <name>-<command>\n");
+    printf("Example: alias ll-ls -l\n");
+    printf("Options:\n");
+    printf("  -h, --help, -help    Show this help message\n");
+}
+
+int cmd_alias(int argc, char **argv) {
+    if (argc < 2) {
+        for (int i = 0; i < alias_count; i++) {
+            printf("alias %s='%s'\n", aliases[i].name, aliases[i].command);
+        }
+        return 0;
+    }
+
+    if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help") || !strcmp(argv[1], "-help")) {
+        alias_usage();
+        return 0;
+    }
+
+    
+    char full_arg[1024] = "";
+    for (int i = 1; i < argc; i++) {
+        strncat(full_arg, argv[i], sizeof(full_arg) - strlen(full_arg) - 1);
+        if (i < argc - 1) strncat(full_arg, " ", sizeof(full_arg) - strlen(full_arg) - 1);
+    }
+
+    char *sep = strchr(full_arg, '-');
+    if (!sep) {
+        printf("Error: Invalid alias format.\n");
+        alias_usage();
+        return 1;
+    }
+
+    char *home = getenv("HOME");
+    if (!home) return 1;
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/.cvx.conf", home);
+
+    FILE *f = fopen(path, "a");
+    if (!f) {
+        perror("fopen");
+        return 1;
+    }
+
+    fprintf(f, "ALIAS=\"%s\"\n", full_arg);
+    fclose(f);
+
+    printf("Alias added persistently to %s\n", path);
+    return 0;
+}
+
+int cmd_unalias(int argc, char **argv) {
+    if (argc < 2 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help") || !strcmp(argv[1], "-help")) {
+        printf("Usage: unalias <name>\n");
+        return argc < 2 ? 1 : 0;
+    }
+
+    char *home = getenv("HOME");
+    if (!home) return 1;
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/.cvx.conf", home);
+
+    FILE *f = fopen(path, "r");
+    if (!f) return 1;
+
+    char temp_path[1100];
+    snprintf(temp_path, sizeof(temp_path), "%s.tmp", path);
+    FILE *tmp = fopen(temp_path, "w");
+    if (!tmp) {
+        fclose(f);
+        return 1;
+    }
+
+    char line[1024];
+    char search[128];
+    snprintf(search, sizeof(search), "ALIAS=\"%s-", argv[1]);
+    bool found = false;
+
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, search, strlen(search)) == 0) {
+            found = true;
+            continue;
+        }
+        fputs(line, tmp);
+    }
+
+    fclose(f);
+    fclose(tmp);
+
+    if (found) {
+        if (rename(temp_path, path) != 0) {
+            perror("rename");
+            return 1;
+        }
+        printf("Alias '%s' removed from %s\n", argv[1], path);
+    } else {
+        remove(temp_path);
+        printf("unalias: %s: not found\n", argv[1]);
+    }
 
     return 0;
 }
