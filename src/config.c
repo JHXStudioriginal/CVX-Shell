@@ -13,6 +13,9 @@
 #include <ctype.h>
 #include "config.h"
 
+#include <sys/stat.h>
+#include <time.h>
+
 char current_dir[512] = "";
 char cvx_prompt[2048] = "";
 Alias aliases[MAX_ALIASES];
@@ -20,27 +23,23 @@ int alias_count = 0;
 bool history_enabled = true;
 char start_dir[1024] = "";
 
-void config() {
-    strncpy(cvx_prompt, "DEFAULT_PROMPT", sizeof(cvx_prompt)-1);
-    cvx_prompt[sizeof(cvx_prompt)-1] = '\0';
+static time_t global_mtime = 0;
+static time_t local_mtime = 0;
 
-    if (getcwd(current_dir, sizeof(current_dir)) == NULL) {
-        perror("getcwd error");
-        current_dir[0] = '\0';
-    }
-
-    strncpy(start_dir, current_dir, sizeof(start_dir)-1);
-    start_dir[sizeof(start_dir)-1] = '\0';
-
-    history_enabled = true;
-    alias_count = 0;
-
-    FILE *f = fopen("/etc/cvx.conf", "r");
+static void parse_config_file(const char *path) {
+    FILE *f = fopen(path, "r");
     if (!f) return;
+
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        if (strcmp(path, "/etc/cvx.conf") == 0) global_mtime = st.st_mtime;
+        else if (strstr(path, "/.cvx.conf")) local_mtime = st.st_mtime;
+    }
 
     char line[1024];
     while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\n")] = 0;
+
+        line[strcspn(line, "\r\n")] = 0;
         char *ptr = line;
         while (*ptr && isspace(*ptr)) ptr++;
         if (*ptr == '#' || *ptr == '\0') continue;
@@ -99,4 +98,72 @@ void config() {
     }
 
     fclose(f);
+}
+
+void config() {
+    
+    for (int i = 0; i < alias_count; i++) {
+        free(aliases[i].name);
+        free(aliases[i].command);
+        aliases[i].name = NULL;
+        aliases[i].command = NULL;
+    }
+    alias_count = 0;
+
+    strncpy(cvx_prompt, "DEFAULT_PROMPT", sizeof(cvx_prompt)-1);
+    cvx_prompt[sizeof(cvx_prompt)-1] = '\0';
+
+    if (current_dir[0] == '\0') {
+        if (getcwd(current_dir, sizeof(current_dir)) == NULL) {
+            perror("getcwd error");
+            current_dir[0] = '\0';
+        }
+        strncpy(start_dir, current_dir, sizeof(start_dir)-1);
+        start_dir[sizeof(start_dir)-1] = '\0';
+    }
+
+    history_enabled = true;
+
+    
+    parse_config_file("/etc/cvx.conf");
+
+    
+    char *home = getenv("HOME");
+    if (home) {
+        char user_config[1024];
+        snprintf(user_config, sizeof(user_config), "%s/.cvx.conf", home);
+
+        
+        if (getuid() != 0 && access(user_config, F_OK) == -1) {
+            FILE *def = fopen(user_config, "w");
+            if (def) {
+                fprintf(def, "PROMPT=default\nHISTORY=true\n");
+                fclose(def);
+            }
+        }
+
+        parse_config_file(user_config);
+    }
+}
+
+void check_and_reload_config() {
+    bool reload = false;
+    struct stat st;
+
+    if (stat("/etc/cvx.conf", &st) == 0) {
+        if (st.st_mtime > global_mtime) reload = true;
+    }
+
+    char *home = getenv("HOME");
+    if (home) {
+        char user_config[1024];
+        snprintf(user_config, sizeof(user_config), "%s/.cvx.conf", home);
+        if (stat(user_config, &st) == 0) {
+            if (st.st_mtime > local_mtime) reload = true;
+        }
+    }
+
+    if (reload) {
+        config();
+    }
 }
