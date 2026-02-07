@@ -17,5 +17,7 @@ int cmd_history(int argc, char **argv);
 int cmd_jobs(int argc, char **argv);
 int cmd_fg(int argc, char **argv);
 int cmd_bg(int argc, char **argv);
+int cmd_alias(int argc, char **argv);
+int cmd_unalias(int argc, char **argv);
 
 #endif
