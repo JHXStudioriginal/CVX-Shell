@@ -74,6 +74,12 @@ int split_args(const char *line, char *args[], int max_args) {
         if (*p == '#' && !in_quotes) break;
         if (argc >= max_args - 1) break;
 
+        if (*p == '\\' && p[1] != '\0') {
+            buffer[buf_i++] = *p++;
+            buffer[buf_i++] = *p++;
+            continue;
+        }
+
         if ((*p == '<' && p[1] == '<') || (*p == '>' && p[1] == '>')) {
             if (buf_i > 0) {
                 buffer[buf_i] = '\0';
@@ -285,7 +291,7 @@ void process_command_line(char *line) {
     if (!line) return;
 
     char *saveptr = NULL;
-    char *cmd = strtok_r(line, ";", &saveptr);
+    char *cmd = strtok_r(line, ";\n", &saveptr);
 
     while (cmd) {
         while (*cmd == ' ' || *cmd == '\t') cmd++;
@@ -298,6 +304,6 @@ void process_command_line(char *line) {
             process_single_command(cmd);
         }
 
-        cmd = strtok_r(NULL, ";", &saveptr);
+        cmd = strtok_r(NULL, ";\n", &saveptr);
     }
 }
