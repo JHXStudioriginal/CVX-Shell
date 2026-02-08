@@ -17,5 +17,6 @@ void replace_alias(char *args[], int *argc);
 void handle_redirection(char *args[], int *argc);
 void process_single_command(char *line);
 void process_command_line(char *line);
+char* expand_history(const char *line, const char *last_command);
 
 #endif
