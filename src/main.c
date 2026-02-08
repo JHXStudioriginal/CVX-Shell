@@ -38,6 +38,10 @@ void process_single_command(char *line) {
     while (end > line && (*end == ' ' || *end == '\n')) *end-- = '\0';
     if (*line == '\0') return;
 
+    if (strcmp(line, "exit") == 0) {
+        exit(0);
+    }
+
     bool background = false;
     int len = strlen(line);
     if (len > 0 && line[len - 1] == '&') {
@@ -207,7 +211,18 @@ int main(int argc, char *argv[]) {
                 if (new_full) {
                     full_line = new_full;
                     memcpy(full_line + full_len, line_buf, len + 1);
-                    process_command_line(full_line);
+                    char *expanded_cmd = expand_history(full_line, last_command);
+                    if (strcmp(full_line, expanded_cmd) != 0) {
+                        printf("%s\n", expanded_cmd);
+                    }
+                    char *ptr = expanded_cmd;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                    if (*ptr != '\0' && *ptr != '#') {
+                        free(last_command);
+                        last_command = strdup(expanded_cmd);
+                    }
+                    process_command_line(expanded_cmd);
+                    free(expanded_cmd);
                 }
                 free(full_line);
                 full_line = NULL;
@@ -292,20 +307,12 @@ int main(int argc, char *argv[]) {
 
         line = full_line;
     
-        bool expanded = false;
-    
-        if (strcmp(line, "!!") == 0) {
-            if (!last_command) {
-                printf("cvx: no history\n");
-                free(line);
-                continue;
-            }
-    
-            free(line);
-            line = strdup(last_command);
-            expanded = true;
-            printf("%s\n", line);
+        char *expanded_line = expand_history(line, last_command);
+        if (strcmp(line, expanded_line) != 0) {
+            printf("%s\n", expanded_line);
         }
+        free(line);
+        line = expanded_line;
     
     
         if (strcmp(line, "exit") == 0) {
@@ -313,21 +320,33 @@ int main(int argc, char *argv[]) {
             break;
         }
     
-        if (line[0] != '\0' && history_enabled && !expanded) {
-            linenoiseHistoryAdd(line);
-            linenoiseHistorySave(history_path);
+        if (line[0] != '\0' && history_enabled) {
+            char *ptr = line;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            if (*ptr != '\0' && *ptr != '#') {
+                linenoiseHistoryAdd(line);
+                linenoiseHistorySave(history_path);
+            }
         }
     
         char *original_line = NULL;
-        if (line[0] != '\0' && !expanded) {
-            original_line = strdup(line);
+        if (line[0] != '\0') {
+            char *ptr = line;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            if (*ptr != '\0' && *ptr != '#') {
+                original_line = strdup(line);
+            }
         }
-    
-        process_command_line(line);
     
         if (original_line) {
             free(last_command);
-            last_command = original_line;
+            last_command = strdup(original_line);
+        }
+
+        process_command_line(line);
+    
+        if (original_line) {
+            free(original_line);
         }
     
         free(line);
@@ -335,4 +354,4 @@ int main(int argc, char *argv[]) {
     
     end_shell:
     return 0;
-}    
+}
