@@ -307,3 +307,32 @@ void process_command_line(char *line) {
         cmd = strtok_r(NULL, ";\n", &saveptr);
     }
 }
+
+char* expand_history(const char *line, const char *last_command) {
+    if (!line) return NULL;
+    if (!last_command) return strdup(line);
+
+    char buffer[8192];
+    int j = 0;
+    int len = strlen(line);
+
+    for (int i = 0; i < len; i++) {
+        if (line[i] == '\\' && line[i+1] == '!' && line[i+2] == '!') {
+            buffer[j++] = '!';
+            buffer[j++] = '!';
+            i += 2;
+        } else if (line[i] == '!' && line[i+1] == '!') {
+            const char *lc = last_command;
+            while (*lc && j < 8191) {
+                buffer[j++] = *lc++;
+            }
+            i++;
+        } else {
+            if (j < 8191) {
+                buffer[j++] = line[i];
+            }
+        }
+    }
+    buffer[j] = '\0';
+    return strdup(buffer);
+}
