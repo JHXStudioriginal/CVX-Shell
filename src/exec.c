@@ -17,7 +17,6 @@
 #include "config.h"
 #include "linenoise.h"
 
-static const char *last_cmd = NULL;
 static pid_t shell_pgid = -1;
 static pid_t fg_pgid = -1;
 
@@ -39,10 +38,6 @@ int exec_command(char *cmdline, bool background) {
         free(args[i]);
         args[i] = tmp;
     }
-
-    linenoiseHistoryAdd(cmdline);
-    free((void *)last_cmd);
-    last_cmd = strdup(cmdline);
 
     bool has_redirect = false;
     for (int i = 0; i < argc; i++) {
@@ -66,6 +61,7 @@ int exec_command(char *cmdline, bool background) {
         if (!strcmp(args[0], "bg")) return cmd_bg(argc, args);
         if (!strcmp(args[0], "alias")) return cmd_alias(argc, args);
         if (!strcmp(args[0], "unalias")) return cmd_unalias(argc, args);
+        if (!strcmp(args[0], "exit")) exit(0);
     }
     
 
