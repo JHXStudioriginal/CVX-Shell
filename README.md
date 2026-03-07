@@ -7,21 +7,26 @@
   - `pwd` (`-L` logical, `-P` physical, `--help`)
   - `help` (shows all built-ins)
   - `ls` (auto `--color=auto`)
-  - `history`
+  - `history` (shows command history)
+  - `alias [<name>-<command>]` (creates a alias)
+  - `unalias [name]` (removes the specified alias)
   - `echo` (supports env vars)
-  - `export [VAR=value]`
+  - `export [VAR=value]` (sets environment variables)
   - `jobs` (list background jobs)
   - `fg` (resume job in foreground)
   - `bg` (resume job in background)
-  - `exit`
+  - `exit` (exit the shell)
+  - `functions` (lists all defined functions.)
+  - `delfunc [name]` (deletes the specified function.)
 * Command chaining with `&&` and `||`
 * Pipelines with `|`
 * Aliases & config:
   - Custom prompt, startup dir, history toggle via `/etc/cvx.conf`
+  - More in [wiki](https://github.com/JHXStudioriginal/CVX-Shell/wiki/Configuration)
 * Arguments:
-  - `cvx --version`, `cvx -v`, `cvx -version`
-  - `cvx -c "<command>"` → run it and exit
-  - `cvx -l` → loads `/etc/profile` + `~/.profile`
+  - `cvx --version`, `cvx -v`, `cvx -version` shows shell version
+  - `cvx -c "<command>"` run it and exit
+  - `cvx -l` loads `/etc/profile` and `~/.profile`
 * Tiny, fast C implementation
 * Line editing powered by [linenoise](https://github.com/antirez/linenoise)
 
@@ -41,7 +46,7 @@ Using Git + Make
 
 `sudo make install`
 
-3. Just run it
+3. Run it
 
 `cvx`
 
