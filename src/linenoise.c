@@ -115,6 +115,7 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <poll.h>
 #include "linenoise.h"
 
 #define LINENOISE_DEFAULT_HISTORY_MAX_LEN 100
@@ -168,19 +169,7 @@ static void refreshLine(struct linenoiseState *l);
 
 
 #if 0
-FILE *lndebug_fp = NULL;
-#define lndebug(...) \
-    do { \
-        if (lndebug_fp == NULL) { \
-            lndebug_fp = fopen("/tmp/lndebug.txt","a"); \
-            fprintf(lndebug_fp, \
-            "[%d %d %d] p: %d, rows: %d, rpos: %d, max: %d, oldmax: %d\n", \
-            (int)l->len,(int)l->pos,(int)l->oldpos,plen,rows,rpos, \
-            (int)l->oldrows,old_rows); \
-        } \
-        fprintf(lndebug_fp, ", " __VA_ARGS__); \
-        fflush(lndebug_fp); \
-    } while (0)
+
 #else
 #define lndebug(fmt, ...)
 #endif
@@ -586,7 +575,7 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
 
     if (flags & REFRESH_CLEAN) {
         
-        int rpos_old = (plen + (int)l->oldpos + (int)l->cols) / (int)l->cols; 
+        int rpos_old = l->oldrpos; 
         if (old_rows - rpos_old > 0) {
             snprintf(seq,64,"\x1b[%dB", old_rows - rpos_old);
             abAppend(&ab,seq,strlen(seq));
@@ -609,9 +598,8 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
         } else {
             for (i = 0; i < l->len; i++) {
                 if (l->buf[i] == '\n') {
-                    abAppend(&ab,"\n",1);
-                    
-                    
+                    abAppend(&ab,"\n\r",2);
+                    abAppend(&ab,"\x1b[0K",4);
                 } else {
                     abAppend(&ab,l->buf+i,1);
                 }
@@ -635,6 +623,7 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
     }
 
     l->oldpos = l->pos;
+    l->oldrpos = rpos2;
     if (write(fd,ab.b,ab.len) == -1) {}
     abFree(&ab);
 }
@@ -806,6 +795,7 @@ int linenoiseEditStart(struct linenoiseState *l, int stdin_fd, int stdout_fd, ch
 
     l->cols = getColumns(stdin_fd, stdout_fd);
     l->oldrows = 0;
+    l->oldrpos = 1;
     l->history_index = 0;
 
     
@@ -847,7 +837,14 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
 
     switch(c) {
     case NEWLINE:
-    case ENTER:    
+    case ENTER: {
+        struct pollfd pfd;
+        pfd.fd = l->ifd;
+        pfd.events = POLLIN;
+        if (poll(&pfd, 1, 0) == 1 && (pfd.revents & POLLIN)) {
+            linenoiseEditInsert(l, '\n');
+            break;
+        }
         history_len--;
         free(history[history_len]);
         if (mlmode) linenoiseEditMoveEnd(l);
@@ -859,6 +856,7 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
             hintsCallback = hc;
         }
         return strdup(l->buf);
+    }
     case CTRL_C:     
         errno = EAGAIN;
         return NULL;
@@ -920,19 +918,8 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
                             if (read(l->ifd,seq,5) == 5 && !memcmp(seq,"[201~",5)) break;
                             continue;
                         }
+                        if (c == '\r') c = '\n';
                         linenoiseEditInsert(l,c);
-                    }
-                    if (l->len > 0 && (l->buf[l->len-1] == '\n' || l->buf[l->len-1] == '\r')) {
-                        history_len--;
-                        free(history[history_len]);
-                        if (mlmode) linenoiseEditMoveEnd(l);
-                        if (hintsCallback) {
-                            linenoiseHintsCallback *hc = hintsCallback;
-                            hintsCallback = NULL;
-                            refreshLine(l);
-                            hintsCallback = hc;
-                        }
-                        return strdup(l->buf);
                     }
                 }
             } else {
