@@ -4,7 +4,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -g
 LDFLAGS = -lm
 
-SRC = src/main.c src/config.c src/commands.c src/prompt.c src/exec.c src/signals.c src/linenoise.c src/parser.c src/jobs.c
+SRC = src/main.c src/config.c src/commands.c src/prompt.c src/exec.c src/signals.c src/linenoise.c src/parser.c src/jobs.c src/functions.c
 OBJ_DIR = obj
 OBJ = $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(SRC))
 OUT = cvx
