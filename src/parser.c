@@ -288,9 +288,10 @@ void unescape_args(char *args[], int argc) {
     }
 }
 
-void process_command_line(char *line) {
-    if (!line) return;
+int process_command_line(char *line) {
+    if (!line) return 0;
 
+    int status = 0;
     char *p = line;
     while (*p) {
         while (*p == ' ' || *p == '\t' || *p == '\n' || *p == ';') p++;
@@ -356,7 +357,7 @@ void process_command_line(char *line) {
             }
             
             if (!is_func) {
-                process_single_command(cmd_start);
+                status = process_single_command(cmd_start);
             }
         }
         
@@ -365,6 +366,7 @@ void process_command_line(char *line) {
             if (*p) p++;
         }
     }
+    return status;
 }
 
 char* expand_history(const char *line, const char *last_command) {
