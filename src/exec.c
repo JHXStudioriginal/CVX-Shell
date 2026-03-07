@@ -16,6 +16,7 @@
 #include "jobs.h"
 #include "config.h"
 #include "linenoise.h"
+#include "functions.h"
 
 static pid_t shell_pgid = -1;
 static pid_t fg_pgid = -1;
@@ -61,9 +62,19 @@ int exec_command(char *cmdline, bool background) {
         if (!strcmp(args[0], "bg")) return cmd_bg(argc, args);
         if (!strcmp(args[0], "alias")) return cmd_alias(argc, args);
         if (!strcmp(args[0], "unalias")) return cmd_unalias(argc, args);
+        if (!strcmp(args[0], "functions")) return cmd_functions(argc, args);
+        if (!strcmp(args[0], "delfunc")) return cmd_delfunc(argc, args);
         if (!strcmp(args[0], "exit")) exit(0);
     }
     
+    const char *func_body = get_function(args[0]);
+    if (func_body) {
+        char *body_copy = strdup(func_body);
+        process_command_line(body_copy);
+        free(body_copy);
+        free_args(args, argc);
+        return 0;
+    }
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -178,6 +189,14 @@ int execute_pipeline(char **cmds, int n, bool background) {
             }
 
             handle_redirection(args, &argc);
+
+            const char *func_body = get_function(args[0]);
+            if (func_body) {
+                char *body_copy = strdup(func_body);
+                process_command_line(body_copy);
+                free(body_copy);
+                exit(0);
+            }
 
             execvp(args[0], args);
             perror("exec");
