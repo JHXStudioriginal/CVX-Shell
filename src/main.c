@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <signal.h>
+#include <fcntl.h>
 #include "config.h"
 #include "prompt.h"
 #include "exec.h"
@@ -21,9 +22,38 @@ static char *last_command = NULL;
 
 static void load_profile(const char *path) {
     if (access(path, R_OK) == 0) {
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "sh %s", path);
-        system(cmd);
+        FILE *f = fopen(path, "r");
+        if (!f) return;
+        
+        int saved_stdout = dup(STDOUT_FILENO);
+        int saved_stderr = dup(STDERR_FILENO);
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull != -1) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+
+        char line_buf[4096];
+        while (fgets(line_buf, sizeof(line_buf), f)) {
+            line_buf[strcspn(line_buf, "\r\n")] = 0;
+            
+            char *p = line_buf + strlen(line_buf);
+            while (p > line_buf && (*(p-1) == ' ' || *(p-1) == '\t')) p--;
+            *p = '\0';
+            
+            p = line_buf;
+            while (*p == ' ' || *p == '\t') p++;
+            if (*p != '\0' && *p != '#') {
+                process_command_line(p);
+            }
+        }
+        fclose(f);
+        
+        dup2(saved_stdout, STDOUT_FILENO);
+        dup2(saved_stderr, STDERR_FILENO);
+        close(saved_stdout);
+        close(saved_stderr);
     }
 }
 
