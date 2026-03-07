@@ -14,6 +14,7 @@
 #include "config.h"
 #include "commands.h"
 #include "signals.h"
+#include "functions.h"
 
 char* expand_tilde(const char *path) {
     if (!path || path[0] != '~')
@@ -290,21 +291,79 @@ void unescape_args(char *args[], int argc) {
 void process_command_line(char *line) {
     if (!line) return;
 
-    char *saveptr = NULL;
-    char *cmd = strtok_r(line, ";\n", &saveptr);
+    char *p = line;
+    while (*p) {
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == ';') p++;
+        if (!*p) break;
 
-    while (cmd) {
-        while (*cmd == ' ' || *cmd == '\t') cmd++;
-
-        char *end = cmd + strlen(cmd) - 1;
-        while (end > cmd && (*end == ' ' || *end == '\n'))
-            *end-- = '\0';
-
-        if (*cmd != '\0') {
-            process_single_command(cmd);
+        char *cmd_start = p;
+        int brace_depth = 0;
+        bool in_quotes = false;
+        char quote_char = 0;
+        
+        while (*p) {
+            if ((*p == '"' || *p == '\'') && (p == cmd_start || *(p-1) != '\\')) {
+                if (!in_quotes) {
+                    in_quotes = true;
+                    quote_char = *p;
+                } else if (*p == quote_char) {
+                    in_quotes = false;
+                }
+            } else if (!in_quotes) {
+                if (*p == '{') brace_depth++;
+                else if (*p == '}') brace_depth--;
+                else if (brace_depth == 0 && (*p == ';' || *p == '\n')) {
+                    break; 
+                }
+            }
+            p++;
         }
-
-        cmd = strtok_r(NULL, ";\n", &saveptr);
+        
+        char save = *p;
+        *p = '\0'; 
+        
+        char *end = cmd_start + strlen(cmd_start) - 1;
+        while (end > cmd_start && (*end == ' ' || *end == '\n')) {
+            *end-- = '\0';
+        }
+        
+        if (*cmd_start != '\0') {
+            bool is_func = false;
+            char *parens = strstr(cmd_start, "()");
+            if (parens) {
+                char *brace = strchr(parens, '{');
+                if (brace) {
+                    is_func = true;
+                    int name_len = parens - cmd_start;
+                    char *name = malloc(name_len + 1);
+                    strncpy(name, cmd_start, name_len);
+                    name[name_len] = '\0';
+                    
+                    char *name_end = name + strlen(name) - 1;
+                    while (name_end >= name && *name_end == ' ') *name_end-- = '\0';
+                    char *name_start = name;
+                    while (*name_start == ' ') name_start++;
+                    
+                    char *body_start = brace + 1;
+                    char *body_end = cmd_start + strlen(cmd_start) - 1;
+                    if (*body_end == '}') {
+                        *body_end = '\0';
+                    }
+                    
+                    add_function(name_start, body_start);
+                    free(name);
+                }
+            }
+            
+            if (!is_func) {
+                process_single_command(cmd_start);
+            }
+        }
+        
+        if (save != '\0') {
+            *p = save;
+            if (*p) p++;
+        }
     }
 }
 
