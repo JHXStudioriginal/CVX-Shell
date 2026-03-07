@@ -59,10 +59,11 @@ struct linenoiseState {
     size_t plen;        
     size_t pos;         
     size_t oldpos;      
-    size_t len;         
-    size_t cols;        
-    size_t oldrows;     
-    int history_index;  
+    size_t len;
+    size_t cols;
+    size_t oldrows;
+    size_t oldrpos;
+    int history_index;
 };
 
 typedef struct linenoiseCompletions {
