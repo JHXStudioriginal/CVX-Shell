@@ -24,15 +24,6 @@ static void load_profile(const char *path) {
     if (access(path, R_OK) == 0) {
         FILE *f = fopen(path, "r");
         if (!f) return;
-        
-        int saved_stdout = dup(STDOUT_FILENO);
-        int saved_stderr = dup(STDERR_FILENO);
-        int devnull = open("/dev/null", O_WRONLY);
-        if (devnull != -1) {
-            dup2(devnull, STDOUT_FILENO);
-            dup2(devnull, STDERR_FILENO);
-            close(devnull);
-        }
 
         char line_buf[4096];
         while (fgets(line_buf, sizeof(line_buf), f)) {
@@ -44,21 +35,20 @@ static void load_profile(const char *path) {
             
             p = line_buf;
             while (*p == ' ' || *p == '\t') p++;
+            
             if (*p != '\0' && *p != '#') {
-                process_command_line(p);
+                if (process_command_line(p) != 0) {
+                    fprintf(stderr, "Failed to load profile\n");
+                    break;
+                }
             }
         }
         fclose(f);
-        
-        dup2(saved_stdout, STDOUT_FILENO);
-        dup2(saved_stderr, STDERR_FILENO);
-        close(saved_stdout);
-        close(saved_stderr);
     }
 }
 
-void process_single_command(char *line) {
-    if (!line) return;
+int process_single_command(char *line) {
+    if (!line) return 0;
 
     char *comment = strchr(line, '#');
     if (comment) *comment = '\0';
@@ -66,7 +56,7 @@ void process_single_command(char *line) {
     while (*line == ' ') line++;
     char *end = line + strlen(line) - 1;
     while (end > line && (*end == ' ' || *end == '\n')) *end-- = '\0';
-    if (*line == '\0') return;
+    if (*line == '\0') return 0;
 
     if (strcmp(line, "exit") == 0) {
         exit(0);
@@ -152,6 +142,7 @@ void process_single_command(char *line) {
         else if (pipe_count == 1)
             last_status = exec_command(pipe_cmds[0], background);
     }
+    return last_status;
 }
 
 int main(int argc, char *argv[]) {
