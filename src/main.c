@@ -15,7 +15,10 @@
 #include "prompt.h"
 #include "exec.h"
 #include "signals.h"
+#include "lexer.h"
 #include "parser.h"
+#include "ast.h"
+#include "utils.h"
 #include "linenoise.h"
 
 static char *last_command = NULL;
@@ -28,14 +31,11 @@ static void load_profile(const char *path) {
         char line_buf[4096];
         while (fgets(line_buf, sizeof(line_buf), f)) {
             line_buf[strcspn(line_buf, "\r\n")] = 0;
-            
             char *p = line_buf + strlen(line_buf);
             while (p > line_buf && (*(p-1) == ' ' || *(p-1) == '\t')) p--;
             *p = '\0';
-            
             p = line_buf;
             while (*p == ' ' || *p == '\t') p++;
-            
             if (*p != '\0' && *p != '#') {
                 if (process_command_line(p) != 0) {
                     fprintf(stderr, "Failed to load profile\n");
@@ -47,117 +47,21 @@ static void load_profile(const char *path) {
     }
 }
 
-int process_single_command(char *line) {
-    if (!line) return 0;
 
-    char *comment = strchr(line, '#');
-    if (comment) *comment = '\0';
-
-    while (*line == ' ') line++;
-    char *end = line + strlen(line) - 1;
-    while (end > line && (*end == ' ' || *end == '\n')) *end-- = '\0';
-    if (*line == '\0') return 0;
-
-    if (strcmp(line, "exit") == 0) {
-        exit(0);
-    }
-
-    bool background = false;
-    int len = strlen(line);
-    if (len > 0 && line[len - 1] == '&') {
-        background = true;
-        line[len - 1] = '\0';
-
-        while (len > 1 && line[len - 2] == ' ') {
-            line[len - 2] = '\0';
-            len--;
-        }
-    }
-
-    char *cmds[32];
-    char operators[32];
-    int count = 0;
-
-    char *p = line;
-    while (*p && count < 32) {
-        char *next_and = strstr(p, "&&");
-        char *next_or  = strstr(p, "||");
-        char *split = NULL;
-        char op = 0;
-
-        if (next_and && (!next_or || next_and < next_or)) {
-            split = next_and;
-            op = 'A';
-        } else if (next_or) {
-            split = next_or;
-            op = 'O';
-        }
-
-        if (split) {
-            *split = '\0';
-            while (*p == ' ') p++;
-
-            char *end_cmd = split - 1;
-            while (end_cmd > p && (*end_cmd == ' ' || *end_cmd == '\n'))
-                *end_cmd-- = '\0';
-
-            cmds[count] = p;
-            operators[count] = op;
-            count++;
-            p = split + 2;
-        } else {
-            while (*p == ' ') p++;
-            cmds[count] = p;
-            operators[count] = 0;
-            count++;
-            break;
-        }
-    }
-
-    int last_status = 0;
-
-    for (int i = 0; i < count; i++) {
-        if (i > 0) {
-            if (operators[i - 1] == 'A' && last_status != 0) continue;
-            if (operators[i - 1] == 'O' && last_status == 0) continue;
-        }
-
-        char *pipe_cmds[16];
-        int pipe_count = 0;
-        char *saveptr;
-        char *q = strtok_r(cmds[i], "|", &saveptr);
-
-        while (q && pipe_count < 16) {
-            while (*q == ' ') q++;
-            char *end3 = q + strlen(q) - 1;
-            while (end3 > q && (*end3 == ' ' || *end3 == '\n'))
-                *end3-- = '\0';
-
-            pipe_cmds[pipe_count++] = q;
-            q = strtok_r(NULL, "|", &saveptr);
-        }
-
-        if (pipe_count > 1)
-            last_status = execute_pipeline(pipe_cmds, pipe_count, background);
-        else if (pipe_count == 1)
-            last_status = exec_command(pipe_cmds[0], background);
-    }
-    return last_status;
-}
 
 int main(int argc, char *argv[]) {
+    setvbuf(stdout, NULL, _IONBF, 0);
 
     signal(SIGTTOU, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
     signal(SIGINT,  SIG_IGN);
-    
     if (argc > 1 &&
         (strcmp(argv[1], "--version") == 0 ||
          strcmp(argv[1], "-v") == 0 ||
          strcmp(argv[1], "-version") == 0)) {
 
-        printf("CVX Shell beta 0.8.6\n");
+        printf("CVX Shell beta 0.8.5\n");
         printf("Copyright (C) 2025-2026 JHX Studio's\n");
         printf("License: Elasna Open Source License v2\n");
         return 0;
@@ -167,11 +71,9 @@ int main(int argc, char *argv[]) {
         (strcmp(argv[1], "--help") == 0 ||
          strcmp(argv[1], "-help") == 0 ||
          strcmp(argv[1], "-h") == 0)) {
-    
         process_command_line("help");
         return 0;
     }
-    
 
     if (argc > 2 && strcmp(argv[1], "-c") == 0) {
         char cmd[4096] = {0};
@@ -180,7 +82,6 @@ int main(int argc, char *argv[]) {
             if (i < argc - 1)
                 strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1);
         }
-    
         process_command_line(cmd);
         return 0;
     }    
@@ -201,56 +102,24 @@ int main(int argc, char *argv[]) {
             perror("Cannot open file.");
             return 1;
         }
-    
-        char line_buf[4096];
-        char *full_line = NULL;
-        size_t full_len = 0;
 
-        while (fgets(line_buf, sizeof(line_buf), f)) {
-            check_and_reload_config();
-            line_buf[strcspn(line_buf, "\r\n")] = 0;
-            
-            char *p = line_buf + strlen(line_buf);
-            while (p > line_buf && (*(p-1) == ' ' || *(p-1) == '\t')) p--;
-            *p = '\0';
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);
 
-            size_t len = strlen(line_buf);
-            if (len > 0 && line_buf[len-1] == '\\') {
-                line_buf[len-1] = '\0';
-                len--;
-                
-                char *new_full = realloc(full_line, full_len + len + 1);
-                if (new_full) {
-                    full_line = new_full;
-                    memcpy(full_line + full_len, line_buf, len);
-                    full_len += len;
-                    full_line[full_len] = '\0';
-                }
-            } else {
-                size_t new_len = full_len + len + 1;
-                char *new_full = realloc(full_line, new_len);
-                if (new_full) {
-                    full_line = new_full;
-                    memcpy(full_line + full_len, line_buf, len + 1);
-                    char *expanded_cmd = expand_history(full_line, last_command);
-                    if (strcmp(full_line, expanded_cmd) != 0) {
-                        printf("%s\n", expanded_cmd);
-                    }
-                    char *ptr = expanded_cmd;
-                    while (*ptr == ' ' || *ptr == '\t') ptr++;
-                    if (*ptr != '\0' && *ptr != '#') {
-                        free(last_command);
-                        last_command = strdup(expanded_cmd);
-                    }
-                    process_command_line(expanded_cmd);
-                    free(expanded_cmd);
-                }
-                free(full_line);
-                full_line = NULL;
-                full_len = 0;
-            }
+        char *buffer = malloc(fsize + 1);
+        if (!buffer) {
+            perror("malloc");
+            fclose(f);
+            return 1;
         }
+
+        size_t bytes_read = fread(buffer, 1, fsize, f);
         fclose(f);
+        buffer[bytes_read] = '\0';
+
+        process_command_line(buffer);
+        free(buffer);
         return 0;
     }
 
@@ -261,7 +130,7 @@ int main(int argc, char *argv[]) {
 
     pid_t shell_pgid = getpid();
     setpgid(shell_pgid, shell_pgid);
-    tcsetpgrp(STDIN_FILENO, shell_pgid);
+    if (isatty(STDIN_FILENO)) tcsetpgrp(STDIN_FILENO, shell_pgid);
 
     const char *history_file = ".cvx_history";
     char history_path[1024];
@@ -288,7 +157,6 @@ int main(int argc, char *argv[]) {
                 goto end_shell;
             }
 
-            
             char *p = line + strlen(line);
             while (p > line && (*(p-1) == ' ' || *(p-1) == '\t')) p--;
             *p = '\0';
@@ -312,7 +180,7 @@ int main(int argc, char *argv[]) {
                 free(line);
                 continue;
             } else {
-                size_t new_len = full_len + len + 1;
+                size_t new_len = full_len + len + 2;
                 char *new_full = realloc(full_line, new_len);
                 if (!new_full) {
                     perror("realloc");
@@ -320,27 +188,32 @@ int main(int argc, char *argv[]) {
                     break;
                 }
                 full_line = new_full;
-                memcpy(full_line + full_len, line, len + 1);
+                if (full_len > 0 && full_line[full_len-1] != '\n') {
+                    full_line[full_len++] = '\n';
+                }
+                memcpy(full_line + full_len, line, len);
+                full_len += len;
+                full_line[full_len] = '\0';
                 free(line);
+
+                if (!is_block_complete(full_line)) {
+                    continue;
+                }
                 break;
             }
         }
 
         line = full_line;
-    
         char *expanded_line = expand_history(line, last_command);
         if (strcmp(line, expanded_line) != 0) {
             printf("%s\n", expanded_line);
         }
         free(line);
         line = expanded_line;
-    
-    
         if (strcmp(line, "exit") == 0) {
             free(line);
             break;
         }
-    
         if (line[0] != '\0' && history_enabled) {
             char *ptr = line;
             while (*ptr == ' ' || *ptr == '\t') ptr++;
@@ -349,7 +222,6 @@ int main(int argc, char *argv[]) {
                 linenoiseHistorySave(history_path);
             }
         }
-    
         char *original_line = NULL;
         if (line[0] != '\0') {
             char *ptr = line;
@@ -358,21 +230,17 @@ int main(int argc, char *argv[]) {
                 original_line = strdup(line);
             }
         }
-    
         if (original_line) {
             free(last_command);
             last_command = strdup(original_line);
         }
 
         process_command_line(line);
-    
         if (original_line) {
             free(original_line);
         }
-    
         free(line);
     }
-    
     end_shell:
     return 0;
 }
