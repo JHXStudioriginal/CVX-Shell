@@ -101,7 +101,6 @@ static void parse_config_file(const char *path) {
 }
 
 void config() {
-    
     for (int i = 0; i < alias_count; i++) {
         free(aliases[i].name);
         free(aliases[i].command);
@@ -124,16 +123,13 @@ void config() {
 
     history_enabled = true;
 
-    
     parse_config_file("/etc/cvx.conf");
 
-    
     char *home = getenv("HOME");
     if (home) {
         char user_config[1024];
         snprintf(user_config, sizeof(user_config), "%s/.cvx.conf", home);
 
-        
         if (getuid() != 0 && access(user_config, F_OK) == -1) {
             FILE *def = fopen(user_config, "w");
             if (def) {
