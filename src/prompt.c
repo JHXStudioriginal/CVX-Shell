@@ -127,6 +127,5 @@ const char* get_prompt(void) {
 
     expand_escapes(buf, expanded, sizeof(expanded));
     snprintf(prompt, sizeof(prompt), "%s", expanded);
-    
     return prompt;
 }
