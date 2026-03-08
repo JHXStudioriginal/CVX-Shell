@@ -63,7 +63,6 @@ static void print_with_escapes(const char *s) {
     }
 }
 
-    
 
 int cmd_echo(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
@@ -119,13 +118,13 @@ int cmd_pwd(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-P") == 0) physical = 1;
         else if (strcmp(argv[i], "-L") == 0) physical = 0;
-        else if (strcmp(argv[i], "--help") == 0) {
+        else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("Usage: pwd [OPTION]...\n");
             printf("Print the name of the current working directory.\n\n");
             printf("Options:\n");
             printf("  -L      print the logical current working directory (default)\n");
             printf("  -P      print the physical current working directory (resolving symlinks)\n");
-            printf("      --help     display this help and exit\n");
+            printf("      --help, -help, -h     display this help message\n");
             return 0;
         }
     }
@@ -307,7 +306,6 @@ int cmd_alias(int argc, char **argv) {
         return 0;
     }
 
-    
     char full_arg[1024] = "";
     for (int i = 1; i < argc; i++) {
         strncat(full_arg, argv[i], sizeof(full_arg) - strlen(full_arg) - 1);
