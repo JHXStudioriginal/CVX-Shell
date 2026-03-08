@@ -12,9 +12,11 @@
 #include <signal.h>
 #include <termios.h>
 #include "parser.h"
+#include "ast.h"
 #include "commands.h"
 #include "jobs.h"
 #include "config.h"
+#include "utils.h"
 #include "linenoise.h"
 #include "functions.h"
 
@@ -48,6 +50,29 @@ int exec_command(char *cmdline, bool background) {
             break;
         }
     }
+    
+    if (argc > 0 && strchr(args[0], '=') != NULL && !has_redirect) {
+        char *eq = strchr(args[0], '=');
+        if (eq > args[0]) {
+            *eq = '\0';
+            char *varname = args[0];
+            char *value = eq + 1;
+            setenv(varname, value, 1);
+            if (argc == 1) {
+                free_args(args, argc);
+                return 0;
+            }
+        }
+    }
+
+    const char *func_body = get_function(args[0]);
+    if (func_body) {
+        char *body_copy = strdup(func_body);
+        int status = process_command_line(body_copy);
+        free(body_copy);
+        free_args(args, argc);
+        return status;
+    }
 
     if (!has_redirect) {
         if (!strcmp(args[0], "cd")) return cmd_cd(argc, args);
@@ -66,15 +91,6 @@ int exec_command(char *cmdline, bool background) {
         if (!strcmp(args[0], "delfunc")) return cmd_delfunc(argc, args);
         if (!strcmp(args[0], "exit")) exit(0);
     }
-    
-    const char *func_body = get_function(args[0]);
-    if (func_body) {
-        char *body_copy = strdup(func_body);
-        process_command_line(body_copy);
-        free(body_copy);
-        free_args(args, argc);
-        return 0;
-    }
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -85,7 +101,6 @@ int exec_command(char *cmdline, bool background) {
 
     if (pid == 0) {
         setpgid(0, 0);
-        
         signal(SIGINT, SIG_DFL);
         signal(SIGTSTP, SIG_DFL);
 
@@ -108,11 +123,10 @@ int exec_command(char *cmdline, bool background) {
     if (background) {
         jobs_add(pid, cmdline, JOB_RUNNING);
         printf("[%d] %d\n", jobs_last_id(), pid);
-    
-        tcsetpgrp(STDIN_FILENO, shell_pgid);
+        if (isatty(STDIN_FILENO)) tcsetpgrp(STDIN_FILENO, shell_pgid);
     } else {
         fg_pgid = pid;
-        tcsetpgrp(STDIN_FILENO, fg_pgid);
+        if (isatty(STDIN_FILENO)) tcsetpgrp(STDIN_FILENO, fg_pgid);
 
         waitpid(-fg_pgid, &status, WUNTRACED);
 
@@ -122,7 +136,7 @@ int exec_command(char *cmdline, bool background) {
         if (WIFSTOPPED(status))
         jobs_add(fg_pgid, cmdline, JOB_STOPPED);
 
-        tcsetpgrp(STDIN_FILENO, shell_pgid);
+        if (isatty(STDIN_FILENO)) tcsetpgrp(STDIN_FILENO, shell_pgid);
         fg_pgid = -1;
     }
 
@@ -193,9 +207,9 @@ int execute_pipeline(char **cmds, int n, bool background) {
             const char *func_body = get_function(args[0]);
             if (func_body) {
                 char *body_copy = strdup(func_body);
-                process_command_line(body_copy);
+                int status = process_command_line(body_copy);
                 free(body_copy);
-                exit(0);
+                exit(status);
             }
 
             execvp(args[0], args);
@@ -223,22 +237,18 @@ int execute_pipeline(char **cmds, int n, bool background) {
     } else {
         fg_pgid = pgid;
         tcsetpgrp(STDIN_FILENO, fg_pgid);
-    
         int status;
         pid_t wpid;
-    
         while ((wpid = waitpid(-fg_pgid, &status, WUNTRACED)) > 0) {
             if (WIFSTOPPED(status) || WIFSIGNALED(status)) {
                 write(STDOUT_FILENO, "\n", 1);
             }
-    
             if (WIFSTOPPED(status)) {
                 jobs_add(fg_pgid, cmds[0], JOB_STOPPED);
                 break;
             }
         }
-    
-        tcsetpgrp(STDIN_FILENO, shell_pgid);
+        if (isatty(STDIN_FILENO)) tcsetpgrp(STDIN_FILENO, shell_pgid);
         fg_pgid = -1;
     }    
 
