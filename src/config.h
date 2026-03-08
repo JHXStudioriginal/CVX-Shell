@@ -22,4 +22,3 @@ void config(void);
 void check_and_reload_config(void);
 
 #endif
-
