@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <glob.h>
 #include "utils.h"
 #include "config.h"
 #include "commands.h"
@@ -126,6 +127,12 @@ int split_args(const char *line, char *args[], int max_args) {
             }
             p++;
             continue;
+        }
+
+        if (!in_quotes) {
+            if (*p == '*') { buffer[buf_i++] = '\x01'; p++; continue; }
+            if (*p == '?') { buffer[buf_i++] = '\x02'; p++; continue; }
+            if (*p == '[') { buffer[buf_i++] = '\x03'; p++; continue; }
         }
 
         buffer[buf_i++] = *p;
@@ -278,6 +285,66 @@ char* expand_variables(const char *input) {
 
     buffer[j] = '\0';
     return strdup(buffer);
+}
+
+void expand_glob(char *args[], int *argc, int max_args) {
+    char *new_args[max_args];
+    int new_argc = 0;
+
+    for (int i = 0; i < *argc; i++) {
+        bool has_marker = false;
+        if (args[i]) {
+            for (int k = 0; args[i][k]; k++) {
+                if (args[i][k] == '\x01' || args[i][k] == '\x02' || args[i][k] == '\x03') {
+                    has_marker = true;
+                    break;
+                }
+            }
+        }
+
+        if (has_marker) {
+            char *pattern = strdup(args[i]);
+            for (int k = 0; pattern[k]; k++) {
+                if (pattern[k] == '\x01') pattern[k] = '*';
+                else if (pattern[k] == '\x02') pattern[k] = '?';
+                else if (pattern[k] == '\x03') pattern[k] = '[';
+            }
+
+            glob_t results;
+            int ret = glob(pattern, GLOB_NOCHECK | GLOB_TILDE, NULL, &results);
+            if (ret == 0) {
+                for (size_t j = 0; j < results.gl_pathc && new_argc < max_args - 1; j++) {
+                    new_args[new_argc++] = strdup(results.gl_pathv[j]);
+                }
+                globfree(&results);
+                free(args[i]);
+            } else {
+                for (int k = 0; args[i][k]; k++) {
+                    if (args[i][k] == '\x01') args[i][k] = '*';
+                    else if (args[i][k] == '\x02') args[i][k] = '?';
+                    else if (args[i][k] == '\x03') args[i][k] = '[';
+                }
+                if (new_argc < max_args - 1) {
+                    new_args[new_argc++] = args[i];
+                } else {
+                    free(args[i]);
+                }
+            }
+            free(pattern);
+        } else {
+            if (new_argc < max_args - 1) {
+                new_args[new_argc++] = args[i];
+            } else {
+                free(args[i]);
+            }
+        }
+    }
+    new_args[new_argc] = NULL;
+    for (int i = 0; i < new_argc; i++) {
+        args[i] = new_args[i];
+    }
+    args[new_argc] = NULL;
+    *argc = new_argc;
 }
 
 void unescape_args(char *args[], int argc) {
