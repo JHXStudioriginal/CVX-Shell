@@ -121,7 +121,12 @@ const char* get_prompt(void) {
                 continue;
             }
         }
-        strncat(buf, p, 1);
+        
+        int len = strlen(buf);
+        if (len < (int)sizeof(buf) - 1) {
+            buf[len] = *p;
+            buf[len + 1] = '\0';
+        }
         p++;
     }
 
