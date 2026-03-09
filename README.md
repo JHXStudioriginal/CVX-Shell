@@ -38,17 +38,12 @@ Using Git + Make
 
 1. Clone the repository:
 
-`git clone https://github.com/JHXStudioriginal/CVX-Shell.git`
-
-`cd CVX-Shell`
-
-2. Build with make:
-
-`sudo make install`
-
-3. Run it
-
-`cvx`
+```
+git clone https://github.com/JHXStudioriginal/CVX-Shell.git
+cd CVX-Shell
+make
+./cvx
+```
 
 ---------------------------------------------------------------------------------------------------------------------------------------------
 
