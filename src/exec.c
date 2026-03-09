@@ -42,6 +42,8 @@ int exec_command(char *cmdline, bool background) {
         args[i] = tmp;
     }
 
+    expand_glob(args, &argc, 64);
+
     bool has_redirect = false;
     for (int i = 0; i < argc; i++) {
         if (!strcmp(args[i], ">") || !strcmp(args[i], ">>") ||
@@ -201,6 +203,8 @@ int execute_pipeline(char **cmds, int n, bool background) {
                 free(args[j]);
                 args[j] = tmp;
             }
+
+            expand_glob(args, &argc, 64);
 
             handle_redirection(args, &argc);
 
