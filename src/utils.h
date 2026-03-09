@@ -15,5 +15,6 @@ char* expand_variables(const char *input);
 void replace_alias(char *args[], int *argc);
 void handle_redirection(char *args[], int *argc);
 char* expand_history(const char *line, const char *last_command);
+void expand_glob(char *args[], int *argc, int max_args);
 
 #endif
