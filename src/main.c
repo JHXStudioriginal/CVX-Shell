@@ -51,6 +51,7 @@ static void load_profile(const char *path) {
 
 int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
 
     signal(SIGTTOU, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
@@ -61,9 +62,9 @@ int main(int argc, char *argv[]) {
          strcmp(argv[1], "-v") == 0 ||
          strcmp(argv[1], "-version") == 0)) {
 
-        printf("CVX Shell beta 0.8.7\n");
+        printf("CVX Shell beta 0.8.5\n");
         printf("Copyright (C) 2025-2026 JHX Studio's\n");
-        printf("License: Elasna Open Source License v3\n");
+        printf("License: Elasna Open Source License v2\n");
         return 0;
     }
 
@@ -118,7 +119,9 @@ int main(int argc, char *argv[]) {
         fclose(f);
         buffer[bytes_read] = '\0';
 
+        push_param_frame(argc - 1, argv + 1);
         process_command_line(buffer);
+        pop_param_frame();
         free(buffer);
         return 0;
     }
