@@ -108,7 +108,7 @@ static ASTNode *parse_command(Token **token) {
     if ((*token)->type == TOK_STR) {
         Token *start = *token;
         Token *end = start;
-        while (end && end->type == TOK_STR) {
+        while (end && (end->type == TOK_STR || end->type == TOK_BANG)) {
             end = end->next;
         }
         char *cmd_str = concat_tokens(start, end);
