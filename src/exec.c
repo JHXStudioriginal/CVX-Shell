@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <signal.h>
 #include <termios.h>
+#include <ctype.h>
 #include "parser.h"
 #include "ast.h"
 #include "commands.h"
@@ -22,6 +23,7 @@
 
 static pid_t shell_pgid = -1;
 static pid_t fg_pgid = -1;
+int last_exit_status = 0;
 
 int exec_command(char *cmdline, bool background) {
     if (!cmdline || !*cmdline)
@@ -30,24 +32,58 @@ int exec_command(char *cmdline, bool background) {
     if (shell_pgid == -1)
         shell_pgid = getpgrp();
 
-    char *args[64];
-    int argc = split_args(cmdline, args, 64);
+    char *args[256];
+    int argc = split_args(cmdline, args, 256);
 
     replace_alias(args, &argc);
-    unescape_args(args, argc);
 
     for (int i = 0; i < argc; i++) {
-        char *tmp = expand_variables(args[i]);
+        char *expanded = expand_variables(args[i]);
         free(args[i]);
-        args[i] = tmp;
+        char *t_expanded = expand_tilde(expanded);
+        free(expanded);
+        args[i] = t_expanded;
     }
 
-    expand_glob(args, &argc, 64);
+    char *new_args[256];
+    int new_argc = 0;
+    for (int i = 0; i < argc; i++) {
+        if (strchr(args[i], '\x11')) {
+            char *p = args[i];
+            char *start = p;
+            while (*p) {
+                if (*p == '\x11') {
+                    *p = '\0';
+                    if (start != p) {
+                        new_args[new_argc++] = strdup(start);
+                    }
+                    start = p + 1;
+                }
+                p++;
+            }
+            if (*start) {
+                new_args[new_argc++] = strdup(start);
+            }
+            free(args[i]);
+        } else {
+            new_args[new_argc++] = args[i];
+        }
+    }
+    argc = new_argc;
+    for (int i = 0; i < argc; i++) args[i] = new_args[i];
+    args[argc] = NULL;
+
+    expand_glob(args, &argc, 256);
+    quote_removal(args, argc);
+
+    if (argc == 0) return 0;
 
     bool has_redirect = false;
     for (int i = 0; i < argc; i++) {
-        if (!strcmp(args[i], ">") || !strcmp(args[i], ">>") ||
-            !strcmp(args[i], "<") || !strcmp(args[i], "<<")) {
+        const char *op = args[i];
+        if (!op) continue;
+        if (isdigit((unsigned char)op[0]) && (op[1] == '<' || op[1] == '>')) op++;
+        if (op[0] == '<' || op[0] == '>') {
             has_redirect = true;
             break;
         }
@@ -69,29 +105,40 @@ int exec_command(char *cmdline, bool background) {
 
     const char *func_body = get_function(args[0]);
     if (func_body) {
+        push_param_frame(argc, args);
         char *body_copy = strdup(func_body);
-        int status = process_command_line(body_copy);
+        last_exit_status = process_command_line(body_copy);
         free(body_copy);
+        pop_param_frame();
         free_args(args, argc);
-        return status;
+        return last_exit_status;
     }
 
     if (!has_redirect) {
-        if (!strcmp(args[0], "cd")) return cmd_cd(argc, args);
-        if (!strcmp(args[0], "pwd")) return cmd_pwd(argc, args);
-        if (!strcmp(args[0], "export")) return cmd_export(argc, args);
-        if (!strcmp(args[0], "help")) return cmd_help(argc, args);
-        if (!strcmp(args[0], "ls")) return cmd_ls(argc, args);
-        if (!strcmp(args[0], "history")) return cmd_history(argc, args);
-        if (!strcmp(args[0], "echo")) return cmd_echo(argc, args);
-        if (!strcmp(args[0], "jobs")) return cmd_jobs(argc, args);
-        if (!strcmp(args[0], "fg")) return cmd_fg(argc, args);
-        if (!strcmp(args[0], "bg")) return cmd_bg(argc, args);
-        if (!strcmp(args[0], "alias")) return cmd_alias(argc, args);
-        if (!strcmp(args[0], "unalias")) return cmd_unalias(argc, args);
-        if (!strcmp(args[0], "functions")) return cmd_functions(argc, args);
-        if (!strcmp(args[0], "delfunc")) return cmd_delfunc(argc, args);
-        if (!strcmp(args[0], "exit")) exit(0);
+        int builtin_status = -1;
+        if (!strcmp(args[0], "cd")) builtin_status = cmd_cd(argc, args);
+        else if (!strcmp(args[0], "pwd")) builtin_status = cmd_pwd(argc, args);
+        else if (!strcmp(args[0], "export")) builtin_status = cmd_export(argc, args);
+        else if (!strcmp(args[0], "help")) builtin_status = cmd_help(argc, args);
+        else if (!strcmp(args[0], "ls")) builtin_status = cmd_ls(argc, args);
+        else if (!strcmp(args[0], "history")) builtin_status = cmd_history(argc, args);
+        else if (!strcmp(args[0], "echo")) builtin_status = cmd_echo(argc, args);
+        else if (!strcmp(args[0], "jobs")) builtin_status = cmd_jobs(argc, args);
+        else if (!strcmp(args[0], "fg")) builtin_status = cmd_fg(argc, args);
+        else if (!strcmp(args[0], "bg")) builtin_status = cmd_bg(argc, args);
+        else if (!strcmp(args[0], "alias")) builtin_status = cmd_alias(argc, args);
+        else if (!strcmp(args[0], "unalias")) builtin_status = cmd_unalias(argc, args);
+        else if (!strcmp(args[0], "test")) builtin_status = cmd_test(argc, args);
+        else if (!strcmp(args[0], "[")) builtin_status = cmd_bracket(argc, args);
+        else if (!strcmp(args[0], "functions")) builtin_status = cmd_functions(argc, args);
+        else if (!strcmp(args[0], "delfunc")) builtin_status = cmd_delfunc(argc, args);
+        else if (!strcmp(args[0], "exit")) exit(0);
+
+        if (builtin_status != -1) {
+            last_exit_status = builtin_status;
+            free_args(args, argc);
+            return last_exit_status;
+        }
     }
 
     pid_t pid = fork();
@@ -105,12 +152,6 @@ int exec_command(char *cmdline, bool background) {
         setpgid(0, 0);
         signal(SIGINT, SIG_DFL);
         signal(SIGTSTP, SIG_DFL);
-
-        for (int i = 0; i < argc; i++) {
-            char *tmp = expand_tilde(args[i]);
-            free(args[i]);
-            args[i] = tmp;
-        }
 
         handle_redirection(args, &argc);
         execvp(args[0], args);
@@ -143,7 +184,8 @@ int exec_command(char *cmdline, bool background) {
     }
 
     free_args(args, argc);
-    return WIFEXITED(status) ? WEXITSTATUS(status) : 0;
+    last_exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 0);
+    return last_exit_status;
 }
 
 int execute_pipeline(char **cmds, int n, bool background) {
@@ -186,33 +228,61 @@ int execute_pipeline(char **cmds, int n, bool background) {
                 close(pipefd[1]);
             }
 
-            char *args[64];
-            int argc = split_args(cmds[i], args, 64);
+            char *args[256];
+            int argc = split_args(cmds[i], args, 256);
 
             replace_alias(args, &argc);
-            unescape_args(args, argc);
 
             for (int j = 0; j < argc; j++) {
-                char *tmp = expand_variables(args[j]);
+                char *expanded = expand_variables(args[j]);
                 free(args[j]);
-                args[j] = tmp;
+                char *t_expanded = expand_tilde(expanded);
+                free(expanded);
+                args[j] = t_expanded;
             }
 
-            for (int j = 0; j < argc; j++) {
-                char *tmp = expand_tilde(args[j]);
-                free(args[j]);
-                args[j] = tmp;
+            char *new_args[256];
+            int new_argc = 0;
+            for (int k = 0; k < argc; k++) {
+                if (strchr(args[k], '\x11')) {
+                    char *p = args[k];
+                    char *start = p;
+                    while (*p) {
+                        if (*p == '\x11') {
+                            *p = '\0';
+                            if (start != p) {
+                                new_args[new_argc++] = strdup(start);
+                            }
+                            start = p + 1;
+                        }
+                        p++;
+                    }
+                    if (*start) {
+                        new_args[new_argc++] = strdup(start);
+                    }
+                    free(args[k]);
+                } else {
+                    new_args[new_argc++] = args[k];
+                }
             }
+            argc = new_argc;
+            for (int k = 0; k < argc; k++) args[k] = new_args[k];
+            args[argc] = NULL;
 
-            expand_glob(args, &argc, 64);
+            expand_glob(args, &argc, 256);
+            quote_removal(args, argc);
 
             handle_redirection(args, &argc);
 
+            if (argc == 0) exit(0);
+
             const char *func_body = get_function(args[0]);
             if (func_body) {
+                push_param_frame(argc, args);
                 char *body_copy = strdup(func_body);
                 int status = process_command_line(body_copy);
                 free(body_copy);
+                pop_param_frame();
                 exit(status);
             }
 
@@ -244,6 +314,9 @@ int execute_pipeline(char **cmds, int n, bool background) {
         int status;
         pid_t wpid;
         while ((wpid = waitpid(-fg_pgid, &status, WUNTRACED)) > 0) {
+            if (wpid == pgid) {
+                last_exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 0);
+            }
             if (WIFSTOPPED(status) || WIFSIGNALED(status)) {
                 write(STDOUT_FILENO, "\n", 1);
             }
@@ -256,5 +329,5 @@ int execute_pipeline(char **cmds, int n, bool background) {
         fg_pgid = -1;
     }    
 
-    return 0;
+    return last_exit_status;
 }
