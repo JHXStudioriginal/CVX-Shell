@@ -16,5 +16,15 @@ void replace_alias(char *args[], int *argc);
 void handle_redirection(char *args[], int *argc);
 char* expand_history(const char *line, const char *last_command);
 void expand_glob(char *args[], int *argc, int max_args);
+void quote_removal(char *args[], int argc);
+
+typedef struct ParamFrame {
+    int argc;
+    char **argv;
+    struct ParamFrame *next;
+} ParamFrame;
+
+void push_param_frame(int argc, char **argv);
+void pop_param_frame();
 
 #endif
