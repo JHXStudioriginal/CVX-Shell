@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <termios.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <ctype.h>
 
 char previous_dir[1024] = "";
@@ -198,19 +199,17 @@ int cmd_help(int argc, char **argv) {
     printf("\nCVX Shell Help:\n");
     printf("Built-in commands:\n");
     printf("  cd [dir]       - change current directory\n");
-    printf("  pwd [-L|-P|-help]       - print current directory\n");
-    printf("  history [!N]       - show or repeat command history\n");
-    printf("  echo [args]       - print arguments (supports escapes)\n");
-    printf("  export [VAR=value]       - set or show environment variable\n");
-    printf("  jobs       - list background and stopped jobs\n");
-    printf("  fg       - bring a background job to the foreground\n");
-    printf("  bg       - run a stopped job in the background\n");
-    printf("  alias [name-command]       - create a shortcut for a command\n");
-    printf("  unalias       - remove a previously defined alias\n");
-    printf("  functions       - list functions\n");
-    printf("  delfunc       - remove a function definition\n");
-    printf("  cvx --version       - show shell version\n");
-    printf("  cvx --help       - show this help message\n\n");
+    printf("  pwd [-L|-P|-help] - print current directory\n");
+    printf("  ls             - list files\n");
+    printf("  history [!N]   - show or repeat command history\n");
+    printf("  echo [args]    - print arguments (supports escapes)\n");
+    printf("  export [VAR=value] - set or show environment variable\n");
+    printf("  jobs           - list background and stopped jobs\n");
+    printf("  && and |       - command chaining and pipelines\n");
+    printf("  # [comment]    - inline comments\n");
+    printf("  command &      - run command in background\n\n");
+    printf("  cvx --version, cvx -version, cvx -v  - show shell version\n");
+    printf("  help, cvx --help, cvx -help, cvx -h - show this help message\n\n");
     printf("External commands can be executed as usual.\n");
     return 0;
 }
@@ -389,4 +388,59 @@ int cmd_unalias(int argc, char **argv) {
     }
 
     return 0;
+}
+
+int cmd_test(int argc, char **argv) {
+    if (argc < 2) return 1;
+
+    if (argc > 2 && strcmp(argv[1], "!") == 0) {
+        return cmd_test(argc - 1, argv + 1) == 0 ? 1 : 0;
+    }
+    
+    if (argc == 2) {
+        return (strlen(argv[1]) > 0) ? 0 : 1;
+    }
+    
+    if (argc == 3) {
+        if (strcmp(argv[1], "-f") == 0) {
+            struct stat st;
+            if (stat(argv[2], &st) == 0 && S_ISREG(st.st_mode)) return 0;
+            return 1;
+        }
+        if (strcmp(argv[1], "-d") == 0) {
+            struct stat st;
+            if (stat(argv[2], &st) == 0 && S_ISDIR(st.st_mode)) return 0;
+            return 1;
+        }
+        if (strcmp(argv[1], "-z") == 0) return (strlen(argv[2]) == 0) ? 0 : 1;
+        if (strcmp(argv[1], "-n") == 0) return (strlen(argv[2]) > 0) ? 0 : 1;
+        if (strcmp(argv[1], "!") == 0) return (strlen(argv[2]) == 0) ? 0 : 1;
+    }
+    
+    if (argc == 4) {
+        if (strcmp(argv[2], "=") == 0) return (strcmp(argv[1], argv[3]) == 0) ? 0 : 1;
+        if (strcmp(argv[2], "!=") == 0) return (strcmp(argv[1], argv[3]) != 0) ? 0 : 1;
+        
+        char *end1, *end2;
+        long n1 = strtol(argv[1], &end1, 10);
+        long n2 = strtol(argv[3], &end2, 10);
+        
+        if (strcmp(argv[2], "-eq") == 0) return (n1 == n2) ? 0 : 1;
+        if (strcmp(argv[2], "-ne") == 0) return (n1 != n2) ? 0 : 1;
+        if (strcmp(argv[2], "-gt") == 0) return (n1 > n2) ? 0 : 1;
+        if (strcmp(argv[2], "-lt") == 0) return (n1 < n2) ? 0 : 1;
+        if (strcmp(argv[2], "-ge") == 0) return (n1 >= n2) ? 0 : 1;
+        if (strcmp(argv[2], "-le") == 0) return (n1 <= n2) ? 0 : 1;
+    }
+    
+    return 1;
+}
+
+int cmd_bracket(int argc, char **argv) {
+    if (argc < 2 || strcmp(argv[argc-1], "]") != 0) {
+        fprintf(stderr, "[: expected ']' as last argument\n");
+        return 1;
+    }
+    argv[argc-1] = NULL;
+    return cmd_test(argc - 1, argv);
 }
