@@ -11,11 +11,15 @@
 #include "ast.h"
 #include "exec.h"
 #include "functions.h"
+#include "utils.h"
+
+extern int last_exit_status;
 
 void free_ast(ASTNode *node) {
     if (!node) return;
     free_ast(node->left);
     free_ast(node->right);
+    free_ast(node->cond);
     free(node->cmd);
     free(node->name);
     free(node);
@@ -74,6 +78,54 @@ int execute_ast(ASTNode *node, bool background) {
             add_function(node->name, node->cmd);
             return 0;
         }
+        case AST_IF_BODY:
+        case AST_CASE_ITEM:
+            return 0;
+        case AST_IF: {
+            int status = execute_ast(node->cond, false);
+            if (status == 0) {
+                return execute_ast(node->left, background);
+            } else if (node->right) {
+                return execute_ast(node->right, background);
+            }
+            return 0;
+        }
+        case AST_CASE: {
+            char *expanded_word = expand_variables(node->cmd);
+            ASTNode *item = node->left;
+            while (item) {
+                bool match = false;
+                char *expanded_pattern = expand_variables(item->cmd);
+                if (strcmp(expanded_pattern, "*") == 0) match = true;
+                else {
+                    char *p_copy = strdup(expanded_pattern);
+                    char *tok = strtok(p_copy, "|");
+                    while (tok) {
+                        while (*tok == ' ') tok++;
+                        char *end = tok + strlen(tok) - 1;
+                        while (end > tok && *end == ' ') { *end = '\0'; end--; }
+                        if (strcmp(tok, expanded_word) == 0) { match = true; break; }
+                        tok = strtok(NULL, "|");
+                    }
+                    free(p_copy);
+                }
+                free(expanded_pattern);
+                
+                if (match) {
+                    free(expanded_word);
+                    return execute_ast(item->left, background);
+                }
+                item = item->right;
+            }
+            free(expanded_word);
+            return 0;
+        }
+        case AST_NEGATION: {
+            last_exit_status = (execute_ast(node->left, background) == 0 ? 1 : 0);
+            return last_exit_status;
+        }
+        default:
+        
+            return 1;
     }
-    return 0;
 }
