@@ -201,12 +201,17 @@ static ASTNode *parse_sequence(Token **token) {
     }
     
     if (!is_sequence && (*token)->type != TOK_EOF && (*token)->type != TOK_PIPE && 
-        (*token)->type != TOK_AND && (*token)->type != TOK_OR && (*token)->type != TOK_RPAREN) {
+        (*token)->type != TOK_AND && (*token)->type != TOK_OR && (*token)->type != TOK_RPAREN &&
+        (*token)->type != TOK_THEN && (*token)->type != TOK_ELIF && (*token)->type != TOK_ELSE &&
+        (*token)->type != TOK_FI && (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI) {
         is_sequence = true;
     }
 
     if (is_sequence) {
-        if ((*token)->type != TOK_EOF) {
+        if ((*token)->type != TOK_EOF && (*token)->type != TOK_RPAREN &&
+            (*token)->type != TOK_THEN && (*token)->type != TOK_ELIF &&
+            (*token)->type != TOK_ELSE && (*token)->type != TOK_FI &&
+            (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI) {
             ASTNode *right = parse_sequence(token);
             if (right) {
                 ASTNode *seq = calloc(1, sizeof(*seq));
