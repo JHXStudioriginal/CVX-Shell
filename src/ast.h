@@ -15,7 +15,12 @@ typedef enum {
     AST_OR,
     AST_SEQUENCE,
     AST_BACKGROUND,
-    AST_FUNCDEF
+    AST_FUNCDEF,
+    AST_IF,
+    AST_IF_BODY,
+    AST_CASE,
+    AST_CASE_ITEM,
+    AST_NEGATION
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -24,6 +29,7 @@ typedef struct ASTNode {
     char *name;
     struct ASTNode *left;
     struct ASTNode *right;
+    struct ASTNode *cond;
 } ASTNode;
 
 void free_ast(ASTNode *node);
