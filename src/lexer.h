@@ -18,6 +18,16 @@ typedef enum {
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_BLOCK,
+    TOK_IF,
+    TOK_THEN,
+    TOK_ELSE,
+    TOK_ELIF,
+    TOK_FI,
+    TOK_CASE,
+    TOK_IN,
+    TOK_ESAC,
+    TOK_DSEMI,
+    TOK_BANG,
     TOK_EOF
 } TokenType;
 
