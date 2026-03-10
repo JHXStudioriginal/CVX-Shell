@@ -19,5 +19,7 @@ int cmd_fg(int argc, char **argv);
 int cmd_bg(int argc, char **argv);
 int cmd_alias(int argc, char **argv);
 int cmd_unalias(int argc, char **argv);
+int cmd_test(int argc, char **argv);
+int cmd_bracket(int argc, char **argv);
 
 #endif
