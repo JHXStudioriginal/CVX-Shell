@@ -92,8 +92,7 @@ Token *tokenize(const char *line) {
                     quote_char = *p;
                 } else if (*p == ' ' || *p == '\t' || *p == '\n' ||
                            *p == ';' || *p == '|' ||
-                           *p == '{' || *p == '}' || *p == '(' || *p == ')' ||
-                           *p == '#') {
+                           *p == '{' || *p == '}' || *p == '(' || *p == ')' ) {
                     break;
                 } else if (*p == '&') {
                     if (p > start && (*(p-1) == '>' || *(p-1) == '<')) {
@@ -200,9 +199,12 @@ bool is_block_complete(const char *line) {
                 quote_char = *p;
                 last_op_pos = NULL;
             } else if (*p == '#') {
-                while (*p && *p != '\n') p++;
-                if (!*p) break;
-                continue;
+                if (p == line || isspace((unsigned char)p[-1]) || p[-1] == ';' || p[-1] == '&' || p[-1] == '|') {
+                    while (*p && *p != '\n') p++;
+                    if (!*p) break;
+                    continue;
+                }
+                last_op_pos = NULL;
             } else if (*p == '{') {
                 depth++;
                 last_op_pos = NULL;
@@ -235,10 +237,7 @@ bool is_block_complete(const char *line) {
     }
 
     if (in_quotes || depth > 0) return false;
-
-    if (last_op_pos != NULL) {
-        return false;
-    }
+    if (last_op_pos != NULL) return false;
 
     return true;
 }
