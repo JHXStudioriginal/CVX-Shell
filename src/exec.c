@@ -132,6 +132,7 @@ int exec_command(char *cmdline, bool background) {
         else if (!strcmp(args[0], "[")) builtin_status = cmd_bracket(argc, args);
         else if (!strcmp(args[0], "functions")) builtin_status = cmd_functions(argc, args);
         else if (!strcmp(args[0], "delfunc")) builtin_status = cmd_delfunc(argc, args);
+        else if (!strcmp(args[0], "set")) builtin_status = cmd_set(argc, args);
         else if (!strcmp(args[0], "exit")) exit(0);
 
         if (builtin_status != -1) {
