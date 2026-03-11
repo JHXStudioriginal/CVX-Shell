@@ -593,15 +593,31 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
 
     if (flags & REFRESH_WRITE) {
         abAppend(&ab,l->prompt,plen);
+        int current_col = plen;
         if (maskmode == 1) {
-            for (i = 0; i < l->len; i++) abAppend(&ab,"*",1);
+            for (i = 0; i < l->len; i++) {
+                abAppend(&ab,"*",1);
+                current_col++;
+                if (current_col == (int)l->cols) {
+                    abAppend(&ab,"\n\r",2);
+                    abAppend(&ab,"\x1b[0K",4);
+                    current_col = 0;
+                }
+            }
         } else {
             for (i = 0; i < l->len; i++) {
                 if (l->buf[i] == '\n') {
                     abAppend(&ab,"\n\r",2);
                     abAppend(&ab,"\x1b[0K",4);
+                    current_col = 0;
                 } else {
                     abAppend(&ab,l->buf+i,1);
+                    current_col++;
+                    if (current_col == (int)l->cols) {
+                        abAppend(&ab,"\n\r",2);
+                        abAppend(&ab,"\x1b[0K",4);
+                        current_col = 0;
+                    }
                 }
             }
         }
@@ -919,8 +935,22 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
                             continue;
                         }
                         if (c == '\r') c = '\n';
-                        linenoiseEditInsert(l,c);
+                        if (l->len < l->buflen) {
+                            if (l->len == l->pos) {
+                                l->buf[l->pos] = c;
+                                l->pos++;
+                                l->len++;
+                                l->buf[l->len] = '\0';
+                            } else {
+                                memmove(l->buf+l->pos+1,l->buf+l->pos,l->len-l->pos);
+                                l->buf[l->pos] = c;
+                                l->len++;
+                                l->pos++;
+                                l->buf[l->len] = '\0';
+                            }
+                        }
                     }
+                    refreshLine(l);
                 }
             } else {
                 switch(seq[1]) {
