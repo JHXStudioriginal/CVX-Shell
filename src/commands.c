@@ -6,6 +6,7 @@
 #include "signals.h"
 #include "config.h"
 #include "commands.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -444,4 +445,18 @@ int cmd_bracket(int argc, char **argv) {
     }
     argv[argc-1] = NULL;
     return cmd_test(argc - 1, argv);
+}
+
+int cmd_set(int argc, char **argv) {
+    if (argc == 1) {
+        return 0;
+    }
+
+    int start_idx = 1;
+    if (strcmp(argv[1], "--") == 0) {
+        start_idx = 2;
+    }
+
+    set_current_param_frame(argc - start_idx, argv + start_idx);
+    return 0;
 }
