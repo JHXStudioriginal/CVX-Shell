@@ -26,5 +26,6 @@ typedef struct ParamFrame {
 
 void push_param_frame(int argc, char **argv);
 void pop_param_frame();
+void set_current_param_frame(int argc, char **argv);
 
 #endif
