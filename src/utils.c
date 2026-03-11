@@ -329,6 +329,26 @@ void pop_param_frame() {
     free(tmp);
 }
 
+void set_current_param_frame(int argc, char **argv) {
+    if (!param_stack) {
+        char *dummy_argv[] = { "cvx" };
+        push_param_frame(1, dummy_argv);
+    }
+    
+    char *old_zero = strdup(param_stack->argv[0]);
+    for (int i = 0; i < param_stack->argc; i++) {
+        free(param_stack->argv[i]);
+    }
+    free(param_stack->argv);
+    
+    param_stack->argc = argc + 1;
+    param_stack->argv = malloc((argc + 1) * sizeof(char *));
+    param_stack->argv[0] = old_zero;
+    for (int i = 0; i < argc; i++) {
+        param_stack->argv[i + 1] = strdup(argv[i]);
+    }
+}
+
 char* expand_variables(const char *input) {
     if (!input) return NULL;
     char buffer[8192];
