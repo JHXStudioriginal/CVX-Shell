@@ -364,7 +364,7 @@ char* expand_variables(const char *input) {
                 if (count < 0) count = 0;
                 snprintf(count_str, sizeof(count_str), "%d", count);
                 val = strdup(count_str);
-            } else if (input[i] == '*') {
+            } else if (input[i] == '*' || input[i] == '@') {
                 if (param_stack && param_stack->argc > 1) {
                     int len = 0;
                     for (int k = 1; k < param_stack->argc; k++) len += strlen(param_stack->argv[k]) + 1;
