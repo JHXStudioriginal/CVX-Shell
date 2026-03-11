@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
          strcmp(argv[1], "-v") == 0 ||
          strcmp(argv[1], "-version") == 0)) {
 
-        printf("CVX Shell beta 0.8.5\n");
+        printf("CVX Shell beta 0.8.8\n");
         printf("Copyright (C) 2025-2026 JHX Studio's\n");
         printf("License: Elasna Open Source License v2\n");
         return 0;
@@ -77,13 +77,14 @@ int main(int argc, char *argv[]) {
     }
 
     if (argc > 2 && strcmp(argv[1], "-c") == 0) {
-        char cmd[4096] = {0};
-        for (int i = 2; i < argc; i++) {
-            strncat(cmd, argv[i], sizeof(cmd) - strlen(cmd) - 1);
-            if (i < argc - 1)
-                strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1);
+        if (argc > 3) {
+            push_param_frame(argc - 3, argv + 3);
+        } else {
+            char *fake_argv[1] = { argv[0] };
+            push_param_frame(1, fake_argv);
         }
-        process_command_line(cmd);
+        process_command_line(argv[2]);
+        pop_param_frame();
         return 0;
     }    
 
