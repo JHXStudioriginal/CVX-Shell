@@ -37,7 +37,7 @@ Token *tokenize(const char *line) {
         if (*p == '&') { add_tok(TOK_AMP, NULL, 0); p++; continue; }
         if (*p == '(') { add_tok(TOK_LPAREN, NULL, 0); p++; continue; }
         if (*p == ')') { add_tok(TOK_RPAREN, NULL, 0); p++; continue; }
-        if (*p == '!') { add_tok(TOK_BANG, NULL, 0); p++; continue; }
+        if (*p == '!') { add_tok(TOK_BANG, "!", 1); p++; continue; }
 
         if (*p == '{') {
             const char *start = p + 1;
@@ -186,7 +186,8 @@ char *concat_tokens(Token *start, Token *end) {
 
 bool is_block_complete(const char *line) {
     if (!line) return true;
-    int depth = 0;
+    
+    int brace_depth = 0;
     bool in_quotes = false;
     char quote_char = 0;
     const char *p = line;
@@ -194,6 +195,10 @@ bool is_block_complete(const char *line) {
 
     while (*p) {
         if (!in_quotes) {
+            if (isspace((unsigned char)*p)) {
+                p++;
+                continue;
+            }
             if (*p == '"' || *p == '\'') {
                 in_quotes = true;
                 quote_char = *p;
@@ -206,10 +211,10 @@ bool is_block_complete(const char *line) {
                 }
                 last_op_pos = NULL;
             } else if (*p == '{') {
-                depth++;
+                brace_depth++;
                 last_op_pos = NULL;
             } else if (*p == '}') {
-                depth--;
+                brace_depth--;
                 last_op_pos = NULL;
             } else if (strncmp(p, "&&", 2) == 0) {
                 last_op_pos = p;
@@ -217,9 +222,11 @@ bool is_block_complete(const char *line) {
             } else if (strncmp(p, "||", 2) == 0) {
                 last_op_pos = p;
                 p++;
-            } else if (*p == '|') {
+            } else if (*p == '|' || *p == '&') {
                 last_op_pos = p;
-            } else if (!isspace(*p)) {
+            } else if (*p == ';') {
+                last_op_pos = NULL;
+            } else {
                 last_op_pos = NULL;
             }
         } else {
@@ -236,8 +243,23 @@ bool is_block_complete(const char *line) {
         p++;
     }
 
-    if (in_quotes || depth > 0) return false;
-    if (last_op_pos != NULL) return false;
+    if (in_quotes || brace_depth > 0 || last_op_pos != NULL) return false;
+
+    Token *tokens = tokenize(line);
+    if (!tokens) return true;
+
+    int if_depth = 0;
+    int case_depth = 0;
+    for (Token *t = tokens; t && t->type != TOK_EOF; t = t->next) {
+        if (t->type == TOK_IF) if_depth++;
+        if (t->type == TOK_FI) if_depth--;
+        if (t->type == TOK_CASE) case_depth++;
+        if (t->type == TOK_ESAC) case_depth--;
+    }
+    
+    free_tokens(tokens);
+
+    if (if_depth > 0 || case_depth > 0) return false;
 
     return true;
 }
