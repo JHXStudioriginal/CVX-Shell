@@ -393,6 +393,7 @@ int cmd_unalias(int argc, char **argv) {
 int cmd_test(int argc, char **argv) {
     if (argc < 2) return 1;
 
+    // Handle negation
     if (argc > 2 && strcmp(argv[1], "!") == 0) {
         return cmd_test(argc - 1, argv + 1) == 0 ? 1 : 0;
     }
