@@ -194,24 +194,25 @@ int cmd_history(int argc, char **argv) {
     for (int i = 0; i < count; i++) printf("%d  %s\n", i+1, lines[i]);
     return 0;
 }
-
 int cmd_help(int argc, char **argv) {
     (void)argc; (void)argv;
-    printf("\nCVX Shell Help:\n");
-    printf("Built-in commands:\n");
-    printf("  cd [dir]       - change current directory\n");
-    printf("  pwd [-L|-P|-help] - print current directory\n");
-    printf("  ls             - list files\n");
-    printf("  history [!N]   - show or repeat command history\n");
-    printf("  echo [args]    - print arguments (supports escapes)\n");
-    printf("  export [VAR=value] - set or show environment variable\n");
-    printf("  jobs           - list background and stopped jobs\n");
-    printf("  && and |       - command chaining and pipelines\n");
-    printf("  # [comment]    - inline comments\n");
-    printf("  command &      - run command in background\n\n");
-    printf("  cvx --version, cvx -version, cvx -v  - show shell version\n");
-    printf("  help, cvx --help, cvx -help, cvx -h - show this help message\n\n");
-    printf("External commands can be executed as usual.\n");
+    printf("\nCVX Shell Help - Built-in commands:\n");
+    printf("  cd [dir]                - Change directory (supports ~)\n");
+    printf("  pwd [-L|-P|--help]      - Print working directory (logical/physical)\n");
+    printf("  help                    - Show this help message\n");
+    printf("  ls                      - List directory contents (auto --color=auto)\n");
+    printf("  history                 - Show command history\n");
+    printf("  alias [<name>=<cmd>]    - Create a command alias\n");
+    printf("  unalias [name]          - Remove the specified alias\n");
+    printf("  echo [args]             - Display text (supports environment variables)\n");
+    printf("  export [VAR=value]      - Set environment variables\n");
+    printf("  jobs                    - List background jobs\n");
+    printf("  fg                      - Resume job in foreground\n");
+    printf("  bg                      - Resume job in background\n");
+    printf("  functions               - List all defined functions\n");
+    printf("  delfunc [name]          - Delete the specified function\n");
+    printf("  exit                    - Exit the shell\n\n");
+    printf("External commands can be executed as usual via PATH.\n");
     return 0;
 }
 
