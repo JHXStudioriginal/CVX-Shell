@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
 
         printf("CVX Shell beta 0.8.8\n");
         printf("Copyright (C) 2025-2026 JHX Studio's\n");
-        printf("License: Elasna Open Source License v2\n");
+        printf("License: Elasna Open Source License v3\n");
         return 0;
     }
 
