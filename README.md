@@ -2,22 +2,27 @@
 
 ### Features:
 * Runs **normal Linux commands**, supports **pipes** and **redirections** (`>`, `>>`, `<`, `<<` heredoc)
+* Supports **conditional statements** (`if`/`else`) and **loops** (`for`, `while`, `until`)
 * Built-in commands:
-  - `cd` (with `~` support)
-  - `pwd` (`-L` logical, `-P` physical, `--help`)
-  - `help` (shows all built-ins)
-  - `ls` (auto `--color=auto`)
-  - `history` (shows command history)
-  - `alias [<name>-<command>]` (creates a alias)
-  - `unalias [name]` (removes the specified alias)
-  - `echo` (supports env vars)
-  - `export [VAR=value]` (sets environment variables)
-  - `jobs` (list background jobs)
-  - `fg` (resume job in foreground)
-  - `bg` (resume job in background)
-  - `exit` (exit the shell)
-  - `functions` (lists all defined functions.)
-  - `delfunc [name]` (deletes the specified function.)
+  - `cd [dir]` - Change directory (supports `~`)
+  - `pwd [-L|-P|--help]` - Print working directory (logical/physical)
+  - `help` - Show this help message
+  - `ls` - List directory contents (auto `--color=auto`)
+  - `history` - Show command history
+  - `alias [<name>=<cmd>]` - Create a command alias
+  - `unalias [name]` - Remove the specified alias
+  - `echo [args]` - Display text (supports environment variables)
+  - `export [VAR=value]` - Set environment variables
+  - `jobs` - List background jobs
+  - `fg` - Resume job in foreground
+  - `bg` - Resume job in background
+  - `functions` - List all defined functions
+  - `delfunc [name]` - Delete the specified function
+  - `break [n]` - Exit from within a for, while, or until loop
+  - `continue [n]` - Resume the next iteration of an enclosing loop
+  - `:` - Null command (returns 0 exit status)
+  - `exec [command] [args]` - Replace the shell with the specified command
+  - `exit` - Exit the shell
 * Command chaining with `&&` and `||`
 * Pipelines with `|`
 * Aliases & config:
