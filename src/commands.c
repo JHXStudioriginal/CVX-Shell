@@ -211,6 +211,8 @@ int cmd_help(int argc, char **argv) {
     printf("  bg                      - Resume job in background\n");
     printf("  functions               - List all defined functions\n");
     printf("  delfunc [name]          - Delete the specified function\n");
+    printf("  break [n]               - Exit from within a for, while, or until loop\n");
+    printf("  continue [n]            - Resume the next iteration of an enclosing loop\n");
     printf("  :                       - Null command (returns 0 exit status)\n");
     printf("  exit                    - Exit the shell\n\n");
     printf("External commands can be executed as usual via PATH.\n");
