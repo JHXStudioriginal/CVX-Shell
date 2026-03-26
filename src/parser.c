@@ -18,6 +18,8 @@ static ASTNode *parse_and_or(Token **token);
 static ASTNode *parse_sequence(Token **token);
 static ASTNode *parse_if(Token **token);
 static ASTNode *parse_case(Token **token);
+static ASTNode *parse_for(Token **token);
+static ASTNode *parse_while_until(Token **token, bool is_until);
 
 static ASTNode *parse_if_inner(Token **token, bool expect_fi) {
     consume(token);
@@ -88,9 +90,68 @@ static ASTNode *parse_case(Token **token) {
     return root;
 }
 
+static ASTNode *parse_while_until(Token **token, bool is_until) {
+    consume(token);
+    ASTNode *cond = parse_sequence(token);
+    if (!match(token, TOK_DO)) {
+        fprintf(stderr, "syntax error: expected 'do'\n");
+        return NULL;
+    }
+    ASTNode *body = parse_sequence(token);
+    if (!match(token, TOK_DONE)) {
+        fprintf(stderr, "syntax error: expected 'done'\n");
+    }
+    ASTNode *node = calloc(1, sizeof(*node));
+    node->type = is_until ? AST_UNTIL : AST_WHILE;
+    node->cond = cond;
+    node->left = body;
+    return node;
+}
+
+static ASTNode *parse_for(Token **token) {
+    consume(token);
+    if ((*token)->type != TOK_STR) {
+        fprintf(stderr, "syntax error: expected variable name\n");
+        return NULL;
+    }
+    char *var_name = strdup((*token)->val);
+    consume(token);
+    ASTNode *node = calloc(1, sizeof(*node));
+    node->type = AST_FOR;
+    node->name = var_name;
+
+    if ((*token)->type == TOK_IN) {
+        consume(token);
+        Token *start = *token;
+        while ((*token)->type != TOK_SEMI && (*token)->type != TOK_EOF && (*token)->type != TOK_DO) {
+            consume(token);
+        }
+        node->cmd = concat_tokens(start, *token);
+        if ((*token)->type == TOK_SEMI) consume(token);
+    } else if ((*token)->type == TOK_SEMI) {
+        consume(token);
+        node->cmd = strdup("\"$@\"");
+    } else {
+        node->cmd = strdup("\"$@\"");
+    }
+
+    if (!match(token, TOK_DO)) {
+        fprintf(stderr, "syntax error: expected 'do'\n");
+        return node;
+    }
+    node->left = parse_sequence(token);
+    if (!match(token, TOK_DONE)) {
+        fprintf(stderr, "syntax error: expected 'done'\n");
+    }
+    return node;
+}
+
 static ASTNode *parse_command(Token **token) {
     if ((*token)->type == TOK_IF) return parse_if(token);
     if ((*token)->type == TOK_CASE) return parse_case(token);
+    if ((*token)->type == TOK_WHILE) return parse_while_until(token, false);
+    if ((*token)->type == TOK_UNTIL) return parse_while_until(token, true);
+    if ((*token)->type == TOK_FOR) return parse_for(token);
     
     if ((*token)->type == TOK_STR && 
         (*token)->next && (*token)->next->type == TOK_LPAREN &&
@@ -177,7 +238,8 @@ static ASTNode *parse_sequence(Token **token) {
         if ((*token)->type != TOK_EOF && (*token)->type != TOK_RPAREN &&
             (*token)->type != TOK_THEN && (*token)->type != TOK_ELIF &&
             (*token)->type != TOK_ELSE && (*token)->type != TOK_FI &&
-            (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI) {
+            (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI &&
+            (*token)->type != TOK_DO && (*token)->type != TOK_DONE) {
              consume(token);
              return parse_sequence(token);
         }
@@ -203,7 +265,8 @@ static ASTNode *parse_sequence(Token **token) {
     if (!is_sequence && (*token)->type != TOK_EOF && (*token)->type != TOK_PIPE && 
         (*token)->type != TOK_AND && (*token)->type != TOK_OR && (*token)->type != TOK_RPAREN &&
         (*token)->type != TOK_THEN && (*token)->type != TOK_ELIF && (*token)->type != TOK_ELSE &&
-        (*token)->type != TOK_FI && (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI) {
+        (*token)->type != TOK_FI && (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI &&
+        (*token)->type != TOK_DO && (*token)->type != TOK_DONE) {
         is_sequence = true;
     }
 
@@ -211,7 +274,8 @@ static ASTNode *parse_sequence(Token **token) {
         if ((*token)->type != TOK_EOF && (*token)->type != TOK_RPAREN &&
             (*token)->type != TOK_THEN && (*token)->type != TOK_ELIF &&
             (*token)->type != TOK_ELSE && (*token)->type != TOK_FI &&
-            (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI) {
+            (*token)->type != TOK_ESAC && (*token)->type != TOK_DSEMI &&
+            (*token)->type != TOK_DO && (*token)->type != TOK_DONE) {
             ASTNode *right = parse_sequence(token);
             if (right) {
                 ASTNode *seq = calloc(1, sizeof(*seq));
@@ -244,8 +308,13 @@ ASTNode* parse_ast(const char *line) {
     return ast;
 }
 
+#include "exec.h"
+
 int process_command_line(char *line) {
-    if (!line) return 0;
+    if (!line || !*line) return 0;
+    
+    sigint_received = 0;
+    loop_control = 0;
     ASTNode *ast = parse_ast(line);
     if (!ast) return 0;
     int status = execute_ast(ast, false);

@@ -24,6 +24,8 @@
 static pid_t shell_pgid = -1;
 static pid_t fg_pgid = -1;
 int last_exit_status = 0;
+int loop_control = 0;
+volatile sig_atomic_t sigint_received = 0;
 
 int exec_command(char *cmdline, bool background) {
     if (!cmdline || !*cmdline)
@@ -133,6 +135,9 @@ int exec_command(char *cmdline, bool background) {
         else if (!strcmp(args[0], "functions")) builtin_status = cmd_functions(argc, args);
         else if (!strcmp(args[0], "delfunc")) builtin_status = cmd_delfunc(argc, args);
         else if (!strcmp(args[0], "set")) builtin_status = cmd_set(argc, args);
+        else if (!strcmp(args[0], "break")) { loop_control = 1; builtin_status = 0; }
+        else if (!strcmp(args[0], "continue")) { loop_control = 2; builtin_status = 0; }
+        else if (!strcmp(args[0], ":")) builtin_status = 0;
         else if (!strcmp(args[0], "exit")) exit(0);
 
         if (builtin_status != -1) {
@@ -286,6 +291,31 @@ int execute_pipeline(char **cmds, int n, bool background) {
                 pop_param_frame();
                 exit(status);
             }
+
+            int builtin_status = -1;
+            if (!strcmp(args[0], "cd")) builtin_status = cmd_cd(argc, args);
+            else if (!strcmp(args[0], "pwd")) builtin_status = cmd_pwd(argc, args);
+            else if (!strcmp(args[0], "export")) builtin_status = cmd_export(argc, args);
+            else if (!strcmp(args[0], "help")) builtin_status = cmd_help(argc, args);
+            else if (!strcmp(args[0], "ls")) builtin_status = cmd_ls(argc, args);
+            else if (!strcmp(args[0], "history")) builtin_status = cmd_history(argc, args);
+            else if (!strcmp(args[0], "echo")) builtin_status = cmd_echo(argc, args);
+            else if (!strcmp(args[0], "jobs")) builtin_status = cmd_jobs(argc, args);
+            else if (!strcmp(args[0], "fg")) builtin_status = cmd_fg(argc, args);
+            else if (!strcmp(args[0], "bg")) builtin_status = cmd_bg(argc, args);
+            else if (!strcmp(args[0], "alias")) builtin_status = cmd_alias(argc, args);
+            else if (!strcmp(args[0], "unalias")) builtin_status = cmd_unalias(argc, args);
+            else if (!strcmp(args[0], "test")) builtin_status = cmd_test(argc, args);
+            else if (!strcmp(args[0], "[")) builtin_status = cmd_bracket(argc, args);
+            else if (!strcmp(args[0], "functions")) builtin_status = cmd_functions(argc, args);
+            else if (!strcmp(args[0], "delfunc")) builtin_status = cmd_delfunc(argc, args);
+            else if (!strcmp(args[0], "set")) builtin_status = cmd_set(argc, args);
+            else if (!strcmp(args[0], "break")) { loop_control = 1; builtin_status = 0; }
+            else if (!strcmp(args[0], "continue")) { loop_control = 2; builtin_status = 0; }
+            else if (!strcmp(args[0], ":")) builtin_status = 0;
+            else if (!strcmp(args[0], "exit")) exit(0);
+
+            if (builtin_status != -1) exit(builtin_status);
 
             execvp(args[0], args);
             perror("exec");

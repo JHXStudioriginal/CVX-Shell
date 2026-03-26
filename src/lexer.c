@@ -127,6 +127,11 @@ Token *tokenize(const char *line) {
             else if (strcmp(s, "case") == 0) t = TOK_CASE;
             else if (strcmp(s, "in") == 0) t = TOK_IN;
             else if (strcmp(s, "esac") == 0) t = TOK_ESAC;
+            else if (strcmp(s, "for") == 0) t = TOK_FOR;
+            else if (strcmp(s, "while") == 0) t = TOK_WHILE;
+            else if (strcmp(s, "until") == 0) t = TOK_UNTIL;
+            else if (strcmp(s, "do") == 0) t = TOK_DO;
+            else if (strcmp(s, "done") == 0) t = TOK_DONE;
             add_tok(t, s, p - start);
             free(s);
         } else {
@@ -250,16 +255,19 @@ bool is_block_complete(const char *line) {
 
     int if_depth = 0;
     int case_depth = 0;
+    int loop_depth = 0;
     for (Token *t = tokens; t && t->type != TOK_EOF; t = t->next) {
         if (t->type == TOK_IF) if_depth++;
         if (t->type == TOK_FI) if_depth--;
         if (t->type == TOK_CASE) case_depth++;
         if (t->type == TOK_ESAC) case_depth--;
+        if (t->type == TOK_FOR || t->type == TOK_WHILE || t->type == TOK_UNTIL) loop_depth++;
+        if (t->type == TOK_DONE) loop_depth--;
     }
     
     free_tokens(tokens);
 
-    if (if_depth > 0 || case_depth > 0) return false;
+    if (if_depth > 0 || case_depth > 0 || loop_depth > 0) return false;
 
     return true;
 }

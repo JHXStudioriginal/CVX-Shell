@@ -20,6 +20,9 @@ typedef enum {
     AST_IF_BODY,
     AST_CASE,
     AST_CASE_ITEM,
+    AST_FOR,
+    AST_WHILE,
+    AST_UNTIL,
     AST_NEGATION
 } ASTNodeType;
 

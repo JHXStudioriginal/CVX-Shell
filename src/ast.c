@@ -47,6 +47,7 @@ int execute_ast(ASTNode *node, bool background) {
     switch (node->type) {
         case AST_SEQUENCE: {
             execute_ast(node->left, false);
+            if (loop_control != 0 || sigint_received) return 0;
             return execute_ast(node->right, background);
         }
         case AST_BACKGROUND: {
@@ -54,6 +55,7 @@ int execute_ast(ASTNode *node, bool background) {
         }
         case AST_AND: {
             int status = execute_ast(node->left, false);
+            if (loop_control != 0 || sigint_received) return 0;
             if (status == 0) {
                 return execute_ast(node->right, background);
             }
@@ -61,6 +63,7 @@ int execute_ast(ASTNode *node, bool background) {
         }
         case AST_OR: {
             int status = execute_ast(node->left, false);
+            if (loop_control != 0 || sigint_received) return 0;
             if (status != 0) {
                 return execute_ast(node->right, background);
             }
@@ -83,6 +86,7 @@ int execute_ast(ASTNode *node, bool background) {
             return 0;
         case AST_IF: {
             int status = execute_ast(node->cond, false);
+            if (loop_control != 0 || sigint_received) return 0;
             if (status == 0) {
                 return execute_ast(node->left, background);
             } else if (node->right) {
@@ -119,6 +123,50 @@ int execute_ast(ASTNode *node, bool background) {
             }
             free(expanded_word);
             return 0;
+        }
+        case AST_WHILE: {
+            int status = 0;
+            while (execute_ast(node->cond, false) == 0) {
+                if (sigint_received) break;
+                status = execute_ast(node->left, background);
+                if (loop_control == 1) { loop_control = 0; break; }
+                if (loop_control == 2) { loop_control = 0; continue; }
+                if (sigint_received) break;
+            }
+            return status;
+        }
+        case AST_UNTIL: {
+            int status = 0;
+            while (execute_ast(node->cond, false) != 0) {
+                if (sigint_received) break;
+                status = execute_ast(node->left, background);
+                if (loop_control == 1) { loop_control = 0; break; }
+                if (loop_control == 2) { loop_control = 0; continue; }
+                if (sigint_received) break;
+            }
+            return status;
+        }
+        case AST_FOR: {
+            int status = 0;
+            char *list_expanded = node->cmd ? expand_variables(node->cmd) : strdup("");
+            char *args[256];
+            int count = split_args(list_expanded, args, 256);
+            free(list_expanded);
+            
+            expand_glob(args, &count, 256);
+            quote_removal(args, count);
+            
+            for (int i = 0; i < count; i++) {
+                if (sigint_received) break;
+                setenv(node->name, args[i], 1);
+                status = execute_ast(node->left, background);
+                if (loop_control == 1) { loop_control = 0; break; }
+                if (loop_control == 2) { loop_control = 0; continue; }
+                if (sigint_received) break;
+            }
+            
+            free_args(args, count);
+            return status;
         }
         case AST_NEGATION: {
             last_exit_status = (execute_ast(node->left, background) == 0 ? 1 : 0);

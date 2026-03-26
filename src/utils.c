@@ -18,14 +18,28 @@
 #include "functions.h"
 
 char* expand_tilde(const char *path) {
-    if (!path || path[0] != '~')
-        return strdup(path);
+    if (!path || strchr(path, '~') == NULL)
+        return path ? strdup(path) : NULL;
 
     const char *home = getenv("HOME");
     if (!home) home = "/";
 
-    char expanded[1024];
-    snprintf(expanded, sizeof(expanded), "%s%s", home, path + 1);
+    char expanded[8192] = "";
+    const char *p = path;
+    
+    while (*p) {
+        if (*p == '~' && (p == path || *(p-1) == ':')) {
+            strncat(expanded, home, sizeof(expanded) - strlen(expanded) - 1);
+            p++;
+        } else {
+            int len = strlen(expanded);
+            if (len < 8191) {
+                expanded[len] = *p;
+                expanded[len+1] = '\0';
+            }
+            p++;
+        }
+    }
     return strdup(expanded);
 }
 
@@ -403,18 +417,69 @@ char* expand_variables(const char *input) {
             } else if (input[i] == '{') {
                 i++;
                 char varname[128];
+                char op = 0;
+                char word[256];
+                word[0] = '\0';
                 int k = 0;
-                while (input[i] && input[i] != '}' && k < 127) varname[k++] = input[i++];
+                while (input[i] && input[i] != '}' && input[i] != ':' && input[i] != '-' && input[i] != '=' && input[i] != '?' && input[i] != '+' && k < 127) {
+                    varname[k++] = input[i++];
+                }
                 varname[k] = '\0';
+                
+                bool check_null = false;
+                if (input[i] == ':') {
+                    check_null = true;
+                    i++;
+                }
+
+                if (input[i] == '-' || input[i] == '=' || input[i] == '?' || input[i] == '+') {
+                    op = input[i++];
+                    int w = 0;
+                    while (input[i] && input[i] != '}' && w < 255) {
+                        word[w++] = input[i++];
+                    }
+                    word[w] = '\0';
+                } else {
+                    while (input[i] && input[i] != '}') i++;
+                }
                 if (input[i] == '}') i++;
                 
+                char *env_val = NULL;
                 if (isdigit(varname[0])) {
                     int idx = atoi(varname);
-                    if (param_stack && idx < param_stack->argc) val = strdup(param_stack->argv[idx]);
+                    if (param_stack && idx < param_stack->argc) env_val = param_stack->argv[idx];
                 } else {
-                    char *env = getenv(varname);
-                    if (env) val = strdup(env);
+                    env_val = getenv(varname);
                 }
+                
+                bool is_set = (env_val != NULL);
+                bool is_null = (env_val != NULL && env_val[0] == '\0');
+                bool use_default = check_null ? (!is_set || is_null) : !is_set;
+                
+                if (op == 0) {
+                    if (env_val) val = strdup(env_val);
+                } else if (op == '-') {
+                    if (!use_default) val = strdup(env_val ? env_val : "");
+                    else val = expand_variables(word);
+                } else if (op == '=') {
+                    if (!use_default) val = strdup(env_val ? env_val : "");
+                    else {
+                        val = expand_variables(word);
+                        setenv(varname, val ? val : "", 1);
+                    }
+                } else if (op == '?') {
+                    if (!use_default) val = strdup(env_val ? env_val : "");
+                    else {
+                        char *exp_word = expand_variables(word);
+                        fprintf(stderr, "%s: %s\n", varname, (exp_word && exp_word[0]) ? exp_word : "parameter null or not set");
+                        free(exp_word);
+                        exit(1);
+                    }
+                } else if (op == '+') {
+                    if (!use_default) val = expand_variables(word);
+                    else val = NULL;
+                }
+                i--;
             } else if (isalnum(input[i]) || input[i] == '_') {
                 char varname[128];
                 int k = 0;

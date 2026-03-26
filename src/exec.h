@@ -12,6 +12,12 @@
 #include "signals.h"
 #include "linenoise.h"
 
+#include <signal.h>
+
+extern int last_exit_status;
+extern int loop_control;
+extern volatile sig_atomic_t sigint_received;
+
 int exec_command(char *cmdline, bool background);
 int execute_pipeline(char **cmds, int n, bool background);
 

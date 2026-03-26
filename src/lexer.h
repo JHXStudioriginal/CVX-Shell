@@ -28,6 +28,11 @@ typedef enum {
     TOK_ESAC,
     TOK_DSEMI,
     TOK_BANG,
+    TOK_FOR,
+    TOK_WHILE,
+    TOK_UNTIL,
+    TOK_DO,
+    TOK_DONE,
     TOK_EOF
 } TokenType;
 

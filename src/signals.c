@@ -8,16 +8,27 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#include "exec.h"
+
 void sigchld_handler(int signo) {
     (void)signo;
     int status;
     while (waitpid(-1, &status, WNOHANG) > 0);
 }
 
+void sigint_handler(int signo) {
+    (void)signo;
+    sigint_received = 1;
+}
+
 void setup_signals(void) {
     struct sigaction sa;
 
-    signal(SIGINT,  SIG_IGN);
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGINT, &sa, NULL);
+
     signal(SIGTSTP, SIG_IGN);
     signal(SIGQUIT, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
