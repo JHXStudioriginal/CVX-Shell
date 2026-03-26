@@ -214,6 +214,7 @@ int cmd_help(int argc, char **argv) {
     printf("  break [n]               - Exit from within a for, while, or until loop\n");
     printf("  continue [n]            - Resume the next iteration of an enclosing loop\n");
     printf("  :                       - Null command (returns 0 exit status)\n");
+    printf("  exec [command] [args]   - Replace the shell with the specified command\n");
     printf("  exit                    - Exit the shell\n\n");
     printf("External commands can be executed as usual via PATH.\n");
     return 0;
@@ -463,4 +464,11 @@ int cmd_set(int argc, char **argv) {
 
     set_current_param_frame(argc - start_idx, argv + start_idx);
     return 0;
+}
+
+int cmd_exec(int argc, char **argv) {
+    if (argc < 2) return 0;
+    execvp(argv[1], &argv[1]);
+    perror("exec");
+    return 1;
 }

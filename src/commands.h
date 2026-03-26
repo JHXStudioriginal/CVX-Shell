@@ -22,5 +22,6 @@ int cmd_unalias(int argc, char **argv);
 int cmd_test(int argc, char **argv);
 int cmd_bracket(int argc, char **argv);
 int cmd_set(int argc, char **argv);
+int cmd_exec(int argc, char **argv);
 
 #endif

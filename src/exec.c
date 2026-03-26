@@ -116,6 +116,14 @@ int exec_command(char *cmdline, bool background) {
         return last_exit_status;
     }
 
+    if (!strcmp(args[0], "exec")) {
+        handle_redirection(args, &argc);
+        int status = cmd_exec(argc, args);
+        last_exit_status = status;
+        free_args(args, argc);
+        return last_exit_status;
+    }
+
     if (!has_redirect) {
         int builtin_status = -1;
         if (!strcmp(args[0], "cd")) builtin_status = cmd_cd(argc, args);
@@ -314,6 +322,7 @@ int execute_pipeline(char **cmds, int n, bool background) {
             else if (!strcmp(args[0], "continue")) { loop_control = 2; builtin_status = 0; }
             else if (!strcmp(args[0], ":")) builtin_status = 0;
             else if (!strcmp(args[0], "exit")) exit(0);
+            else if (!strcmp(args[0], "exec")) builtin_status = cmd_exec(argc, args);
 
             if (builtin_status != -1) exit(builtin_status);
 
