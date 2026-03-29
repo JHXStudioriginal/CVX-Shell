@@ -3,7 +3,6 @@
 // All original author information and file headers must be preserved.
 // For full license text, see: [https://github.com/JHXStudioriginal/Elasna-License/blob/main/LICENSE]
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -11,6 +10,7 @@
 #include <string.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include "config.h"
 #include "prompt.h"
 #include "exec.h"
@@ -27,7 +27,6 @@ static void load_profile(const char *path) {
     if (access(path, R_OK) == 0) {
         FILE *f = fopen(path, "r");
         if (!f) return;
-
         char line_buf[4096];
         while (fgets(line_buf, sizeof(line_buf), f)) {
             line_buf[strcspn(line_buf, "\r\n")] = 0;
@@ -47,7 +46,133 @@ static void load_profile(const char *path) {
     }
 }
 
+static char *collect_heredocs(const char *cmd) {
+    char *result = strdup(cmd);
+    if (!result) return NULL;
 
+    char *search = result;
+    while (1) {
+        char *hd = strstr(search, "<<");
+        if (!hd) break;
+
+        char before = (hd > result) ? *(hd - 1) : 0;
+        if (before == '<' || before == '>') { search = hd + 2; continue; }
+        char after = *(hd + 2);
+        if (after == '<' || after == '>') { search = hd + 2; continue; }
+
+        char *p = hd + 2;
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+
+        bool strip_tabs = (*p == '-');
+        if (strip_tabs) { p++; while (*p == ' ' || *p == '\t') p++; }
+
+        bool quoted_delim = (*p == '\'' || *p == '"');
+        char quote_ch = quoted_delim ? *p++ : 0;
+        char delim[64] = {0};
+        int di = 0;
+        while (*p && di < 63) {
+            if (quoted_delim && *p == quote_ch) { p++; break; }
+            if (!quoted_delim && (*p == ' ' || *p == '\t' || *p == '\n' ||
+                *p == ';' || *p == '|' || *p == '&' || *p == ')' || *p == '(')) break;
+            delim[di++] = *p++;
+        }
+        delim[di] = '\0';
+        if (!di) break;
+
+        char *rest_after_decl = p;
+
+        char heredoc_file[] = "/tmp/cvx_heredoc_XXXXXX";
+        int tmp_fd = mkstemp(heredoc_file);
+        if (tmp_fd < 0) { search = p; continue; }
+
+        if (*rest_after_decl == '\n') {
+            char *content = rest_after_decl + 1;
+            char *end = content;
+            char *found_end = NULL;
+
+            while (*end) {
+                char *nl = strchr(end, '\n');
+                char *line_start = end;
+                size_t line_len = nl ? (size_t)(nl - end) : strlen(end);
+
+                char linebuf[256] = {0};
+                if (line_len < sizeof(linebuf)) {
+                    memcpy(linebuf, line_start, line_len);
+                    linebuf[line_len] = '\0';
+                    char *hl = linebuf;
+                    if (strip_tabs) while (*hl == '\t') hl++;
+                    if (strcmp(hl, delim) == 0) {
+                        found_end = nl ? nl + 1 : line_start + line_len;
+                        break;
+                    }
+                }
+
+                if (!nl) {
+                    write(tmp_fd, line_start, line_len);
+                    write(tmp_fd, "\n", 1);
+                    end = line_start + line_len;
+                    break;
+                }
+                write(tmp_fd, line_start, line_len);
+                write(tmp_fd, "\n", 1);
+                end = nl + 1;
+            }
+
+            close(tmp_fd);
+
+            size_t before_len = hd - result;
+            char *after_heredoc = found_end ? found_end : end;
+            size_t file_len = strlen(heredoc_file);
+            size_t rest_len = strlen(after_heredoc);
+            size_t new_len = before_len + 2 + file_len + 1 + rest_len + 1;
+            char *new_result = malloc(new_len);
+            if (!new_result) { unlink(heredoc_file); break; }
+
+            memcpy(new_result, result, before_len);
+            new_result[before_len] = '<';
+            new_result[before_len + 1] = ' ';
+            memcpy(new_result + before_len + 2, heredoc_file, file_len);
+            new_result[before_len + 2 + file_len] = ' ';
+            memcpy(new_result + before_len + 2 + file_len + 1, after_heredoc, rest_len + 1);
+
+            free(result);
+            result = new_result;
+            search = result + before_len + 2 + file_len + 1;
+        } else {
+            while (1) {
+                char *hline = linenoise("> ");
+                if (!hline) break;
+                char *hl = hline;
+                if (strip_tabs) while (*hl == '\t') hl++;
+                if (strcmp(hl, delim) == 0) { free(hline); break; }
+                write(tmp_fd, hl, strlen(hl));
+                write(tmp_fd, "\n", 1);
+                free(hline);
+            }
+            close(tmp_fd);
+
+            size_t before_len = hd - result;
+            size_t file_len = strlen(heredoc_file);
+            size_t rest_len = strlen(rest_after_decl);
+            size_t new_len = before_len + 2 + file_len + 1 + rest_len + 1;
+            char *new_result = malloc(new_len);
+            if (!new_result) { unlink(heredoc_file); break; }
+
+            memcpy(new_result, result, before_len);
+            new_result[before_len] = '<';
+            new_result[before_len + 1] = ' ';
+            memcpy(new_result + before_len + 2, heredoc_file, file_len);
+            new_result[before_len + 2 + file_len] = ' ';
+            memcpy(new_result + before_len + 2 + file_len + 1, rest_after_decl, rest_len + 1);
+
+            free(result);
+            result = new_result;
+            search = result + before_len + 2 + file_len + 1;
+        }
+    }
+    return result;
+}
 
 int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -57,12 +182,12 @@ int main(int argc, char *argv[]) {
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
     signal(SIGINT,  SIG_IGN);
+
     if (argc > 1 &&
         (strcmp(argv[1], "--version") == 0 ||
          strcmp(argv[1], "-v") == 0 ||
          strcmp(argv[1], "-version") == 0)) {
-
-        printf("CVX Shell beta 0.8.9.1\n");
+        printf("CVX Shell beta 0.9\n");
         printf("Copyright (C) 2025-2026 JHX Studio's\n");
         printf("License: Elasna Open Source License v3\n");
         return 0;
@@ -86,7 +211,7 @@ int main(int argc, char *argv[]) {
         process_command_line(argv[2]);
         pop_param_frame();
         return 0;
-    }    
+    }
 
     if (argc > 1 && strcmp(argv[1], "-l") == 0) {
         load_profile("/etc/profile");
@@ -100,26 +225,15 @@ int main(int argc, char *argv[]) {
 
     if (argc > 1 && argv[1][0] != '-') {
         FILE *f = fopen(argv[1], "r");
-        if (!f) {
-            perror("Cannot open file.");
-            return 1;
-        }
-
+        if (!f) { perror("Cannot open file."); return 1; }
         fseek(f, 0, SEEK_END);
         long fsize = ftell(f);
         fseek(f, 0, SEEK_SET);
-
         char *buffer = malloc(fsize + 1);
-        if (!buffer) {
-            perror("malloc");
-            fclose(f);
-            return 1;
-        }
-
+        if (!buffer) { perror("malloc"); fclose(f); return 1; }
         size_t bytes_read = fread(buffer, 1, fsize, f);
         fclose(f);
         buffer[bytes_read] = '\0';
-
         push_param_frame(argc - 1, argv + 1);
         process_command_line(buffer);
         pop_param_frame();
@@ -169,14 +283,9 @@ int main(int argc, char *argv[]) {
             if (len > 0 && line[len - 1] == '\\') {
                 line[len - 1] = '\0';
                 len--;
-
                 size_t new_len = full_len + len + 1;
                 char *new_full = realloc(full_line, new_len);
-                if (!new_full) {
-                    perror("realloc");
-                    free(line);
-                    break;
-                }
+                if (!new_full) { perror("realloc"); free(line); break; }
                 full_line = new_full;
                 memcpy(full_line + full_len, line, len);
                 full_len += len;
@@ -186,11 +295,7 @@ int main(int argc, char *argv[]) {
             } else {
                 size_t new_len = full_len + len + 2;
                 char *new_full = realloc(full_line, new_len);
-                if (!new_full) {
-                    perror("realloc");
-                    free(line);
-                    break;
-                }
+                if (!new_full) { perror("realloc"); free(line); break; }
                 full_line = new_full;
                 if (full_len > 0 && full_line[full_len-1] != '\n') {
                     full_line[full_len++] = '\n';
@@ -208,6 +313,15 @@ int main(int argc, char *argv[]) {
         }
 
         line = full_line;
+
+        if (strstr(line, "<<") != NULL) {
+            char *expanded = collect_heredocs(line);
+            if (expanded) {
+                free(line);
+                line = expanded;
+            }
+        }
+
         char *expanded_line = expand_history(line, last_command);
         if (strcmp(line, expanded_line) != 0) {
             printf("%s\n", expanded_line);
@@ -240,9 +354,7 @@ int main(int argc, char *argv[]) {
         }
 
         process_command_line(line);
-        if (original_line) {
-            free(original_line);
-        }
+        if (original_line) free(original_line);
         free(line);
     }
     end_shell:

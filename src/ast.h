@@ -23,7 +23,8 @@ typedef enum {
     AST_FOR,
     AST_WHILE,
     AST_UNTIL,
-    AST_NEGATION
+    AST_NEGATION,
+    AST_SUBSHELL
 } ASTNodeType;
 
 typedef struct ASTNode {

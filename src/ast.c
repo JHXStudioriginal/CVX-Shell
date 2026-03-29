@@ -12,6 +12,8 @@
 #include "exec.h"
 #include "functions.h"
 #include "utils.h"
+#include <unistd.h>
+#include <sys/wait.h>
 
 extern int last_exit_status;
 
@@ -171,6 +173,31 @@ int execute_ast(ASTNode *node, bool background) {
         case AST_NEGATION: {
             last_exit_status = (execute_ast(node->left, background) == 0 ? 1 : 0);
             return last_exit_status;
+        }
+        case AST_SUBSHELL: {
+            pid_t pid = fork();
+            if (pid < 0) {
+                perror("fork");
+                return 1;
+            }
+            if (pid == 0) {
+                
+                signal(SIGINT, SIG_DFL);
+                signal(SIGTSTP, SIG_DFL);
+                int status = execute_ast(node->left, false);
+                exit(status);
+            }
+            
+            int status = 0;
+            if (background) {
+                
+                
+                return 0; 
+            } else {
+                waitpid(pid, &status, 0);
+                last_exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 0);
+                return last_exit_status;
+            }
         }
         default:
         

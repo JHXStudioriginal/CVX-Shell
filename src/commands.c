@@ -12,12 +12,15 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include "parser.h"
 #include "jobs.h"
 #include <signal.h>
 #include <termios.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <ctype.h>
+
+extern int last_exit_status;
 
 char previous_dir[1024] = "";
 
@@ -31,33 +34,21 @@ static int parse_job_id(const char *arg) {
     return atoi(arg);
 }
 
-static void print_with_escapes(const char *s) {
+static void print_with_escapes(const char *s, bool interpret) {
+    if (!s) return;
     for (int i = 0; s[i]; i++) {
-        if (s[i] == '\\' && s[i+1]) {
+        if (interpret && s[i] == '\\' && s[i+1]) {
             i++;
             switch (s[i]) {
                 case 'n': putchar('\n'); break;
-                case 't': putchar('\t'); break;
                 case 'r': putchar('\r'); break;
-                case 'a': putchar('\a'); break;
-                case 'v': putchar('\v'); break;
+                case 't': putchar('\t'); break;
                 case '\\': putchar('\\'); break;
-                case '"': putchar('"'); break;
-                case '$': putchar('$'); break;
-                case 'x': {
-                    int val = 0;
-                    for (int k = 0; k < 2; k++) {
-                        char c = s[i+1];
-                        if (!c || !isxdigit(c)) break;
-                        i++;
-                        if (c >= '0' && c <= '9') val = val*16 + (c-'0');
-                        else if (c >= 'a' && c <= 'f') val = val*16 + (c-'a'+10);
-                        else if (c >= 'A' && c <= 'F') val = val*16 + (c-'A'+10);
-                    }
-                    putchar(val);
-                    break;
-                }
-                default: putchar(s[i]); break;
+                case 'a': putchar('\a'); break;
+                case 'b': putchar('\b'); break;
+                case 'f': putchar('\f'); break;
+                case 'v': putchar('\v'); break;
+                default: putchar('\\'); putchar(s[i]); break;
             }
         } else {
             putchar(s[i]);
@@ -65,13 +56,28 @@ static void print_with_escapes(const char *s) {
     }
 }
 
-
 int cmd_echo(int argc, char **argv) {
-    for (int i = 1; i < argc; i++) {
-        print_with_escapes(argv[i]);
+    bool interpret = false;
+    bool newline = true;
+    int start = 1;
+
+    while (start < argc && argv[start][0] == '-') {
+        bool possible_flag = true;
+        for (int j = 1; argv[start][j]; j++) {
+            if (argv[start][j] == 'e') interpret = true;
+            else if (argv[start][j] == 'n') newline = false;
+            else if (argv[start][j] == 'E') interpret = false;
+            else { possible_flag = false; break; }
+        }
+        if (!possible_flag) break;
+        start++;
+    }
+
+    for (int i = start; i < argc; i++) {
+        print_with_escapes(argv[i], interpret);
         if (i < argc - 1) putchar(' ');
     }
-    putchar('\n');
+    if (newline) putchar('\n');
     return 0;
 }
 
@@ -242,6 +248,22 @@ int cmd_ls(int argc, char **argv) {
     else { int status; waitpid(pid, &status, 0); return WIFEXITED(status) ? WEXITSTATUS(status) : 1; }
 }
 
+int cmd_exit(int argc, char **argv) {
+    int status = last_exit_status;
+    if (argc > 1) {
+        char *endptr;
+        long val = strtol(argv[1], &endptr, 10);
+        if (*endptr == '\0') {
+            status = (int)val;
+        } else {
+            fprintf(stderr, "cvx: exit: %s: numeric argument required\n", argv[1]);
+            status = 2; 
+        }
+    }
+    exit(status);
+    return 0;
+}
+
 int cmd_jobs(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -399,7 +421,7 @@ int cmd_unalias(int argc, char **argv) {
 int cmd_test(int argc, char **argv) {
     if (argc < 2) return 1;
 
-    // Handle negation
+    
     if (argc > 2 && strcmp(argv[1], "!") == 0) {
         return cmd_test(argc - 1, argv + 1) == 0 ? 1 : 0;
     }
@@ -471,4 +493,20 @@ int cmd_exec(int argc, char **argv) {
     execvp(argv[1], &argv[1]);
     perror("exec");
     return 1;
+}
+
+int cmd_eval(int argc, char **argv) {
+    if (argc < 2) return 0;
+    size_t total_len = 0;
+    for (int i = 1; i < argc; i++) total_len += strlen(argv[i]) + 1;
+    char *cmd = malloc(total_len + 1);
+    if (!cmd) return 1;
+    cmd[0] = '\0';
+    for (int i = 1; i < argc; i++) {
+        strcat(cmd, argv[i]);
+        if (i < argc - 1) strcat(cmd, " ");
+    }
+    int status = process_command_line(cmd);
+    free(cmd);
+    return status;
 }

@@ -91,19 +91,21 @@ int exec_command(char *cmdline, bool background) {
         }
     }
     
-    if (argc > 0 && strchr(args[0], '=') != NULL && !has_redirect) {
+    while (argc > 0 && strchr(args[0], '=') != NULL && !has_redirect) {
+        quote_removal(args, 1);
         char *eq = strchr(args[0], '=');
         if (eq > args[0]) {
             *eq = '\0';
             char *varname = args[0];
             char *value = eq + 1;
             setenv(varname, value, 1);
-            if (argc == 1) {
-                free_args(args, argc);
-                return 0;
-            }
-        }
+            
+            free(args[0]);
+            for (int j = 0; j < argc; j++) args[j] = args[j+1];
+            argc--;
+        } else break;
     }
+    if (argc == 0) return 0;
 
     const char *func_body = get_function(args[0]);
     if (func_body) {
@@ -146,7 +148,8 @@ int exec_command(char *cmdline, bool background) {
         else if (!strcmp(args[0], "break")) { loop_control = 1; builtin_status = 0; }
         else if (!strcmp(args[0], "continue")) { loop_control = 2; builtin_status = 0; }
         else if (!strcmp(args[0], ":")) builtin_status = 0;
-        else if (!strcmp(args[0], "exit")) exit(0);
+        else if (!strcmp(args[0], "exit")) builtin_status = cmd_exit(argc, args);
+        else if (!strcmp(args[0], "eval")) builtin_status = cmd_eval(argc, args);
 
         if (builtin_status != -1) {
             last_exit_status = builtin_status;

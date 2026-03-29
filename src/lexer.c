@@ -84,26 +84,35 @@ Token *tokenize(const char *line) {
         const char *start = p;
         bool in_quotes = false;
         char quote_char = 0;
+        int p_depth = 0;
 
         while (*p) {
             if (!in_quotes) {
                 if (*p == '"' || *p == '\'') {
                     in_quotes = true;
                     quote_char = *p;
-                } else if (*p == ' ' || *p == '\t' || *p == '\n' ||
-                           *p == ';' || *p == '|' ||
-                           *p == '{' || *p == '}' || *p == '(' || *p == ')' ) {
-                    break;
-                } else if (*p == '&') {
-                    if (p > start && (*(p-1) == '>' || *(p-1) == '<')) {
-                    } else if (p[1] == '&') {
-                        break;
-                    } else {
-                        break;
-                    }
+                } else if (*p == '$' && p[1] == '(') {
+                    p_depth++;
+                    p++;
+                } else if (*p == '(' && p_depth > 0) {
+                    p_depth++;
+                } else if (*p == ')' && p_depth > 0) {
+                    p_depth--;
+                } else if (p_depth == 0) {
+                    
+                    if (*p == ' ' || *p == '\t' || *p == '\n' ||
+                        *p == ';' || *p == '|' || *p == '&' ||
+                        *p == '(' || *p == ')' || *p == '{' || *p == '}') break;
                 }
             } else {
-                if (*p == quote_char) {
+                if (quote_char == '"' && *p == '$' && p[1] == '(') {
+                    p_depth++;
+                    p++;
+                } else if (quote_char == '"' && *p == '(' && p_depth > 0) {
+                    p_depth++;
+                } else if (quote_char == '"' && *p == ')' && p_depth > 0) {
+                    p_depth--;
+                } else if (*p == quote_char) {
                     bool escaped = false;
                     const char *rev = p - 1;
                     while (rev >= start && *rev == '\\') {
@@ -139,7 +148,6 @@ Token *tokenize(const char *line) {
         }
     }
     add_tok(TOK_EOF, NULL, 0);
-
     return head;
 }
 
@@ -191,83 +199,92 @@ char *concat_tokens(Token *start, Token *end) {
 
 bool is_block_complete(const char *line) {
     if (!line) return true;
-    
+
     int brace_depth = 0;
-    bool in_quotes = false;
-    char quote_char = 0;
+    bool in_sq = false;
+    bool in_dq = false;
     const char *p = line;
     const char *last_op_pos = NULL;
 
     while (*p) {
-        if (!in_quotes) {
-            if (isspace((unsigned char)*p)) {
-                p++;
-                continue;
-            }
-            if (*p == '"' || *p == '\'') {
-                in_quotes = true;
-                quote_char = *p;
-                last_op_pos = NULL;
-            } else if (*p == '#') {
-                if (p == line || isspace((unsigned char)p[-1]) || p[-1] == ';' || p[-1] == '&' || p[-1] == '|') {
-                    while (*p && *p != '\n') p++;
-                    if (!*p) break;
-                    continue;
+        if (!in_sq && *p == '\\') {
+            p++;
+            if (*p) p++;
+            last_op_pos = NULL;
+            continue;
+        }
+
+        if (in_sq) {
+            if (*p == '\'') in_sq = false;
+        } else if (in_dq) {
+            if (*p == '"') in_dq = false;
+        } else {
+            if (*p == '\'') { in_sq = true; last_op_pos = NULL; }
+            else if (*p == '"') { in_dq = true; last_op_pos = NULL; }
+            else if (*p == '{') brace_depth++;
+            else if (*p == '}') brace_depth--;
+            else if (strncmp(p, "<<", 2) == 0 && *(p+2) != '<' && *(p+2) != '>') {
+                const char *q = p + 2;
+                while (*q == ' ' || *q == '\t') q++;
+                if (*q == '-') { q++; while (*q == ' ' || *q == '\t') q++; }
+                bool qdel = (*q == '\'' || *q == '"');
+                char qch = qdel ? *q++ : 0;
+                char delim[64] = {0};
+                int di = 0;
+                while (*q && di < 63) {
+                    if (qdel && *q == qch) { q++; break; }
+                    if (!qdel && (*q == ' ' || *q == '\t' || *q == '\n' ||
+                        *q == ';' || *q == '|' || *q == '&' || *q == ')')) break;
+                    delim[di++] = *q++;
+                }
+                p = q;
+                while (*p && *p != '\n') p++;
+                if (*p == '\n') {
+                    p++;
+                    while (*p) {
+                        const char *sol = p;
+                        while (*p && *p != '\n') p++;
+                        size_t ll = (size_t)(p - sol);
+                        if (ll == strlen(delim) && strncmp(sol, delim, ll) == 0) {
+                            if (*p == '\n') p++;
+                            break;
+                        }
+                        if (*p == '\n') p++;
+                    }
                 }
                 last_op_pos = NULL;
-            } else if (*p == '{') {
-                brace_depth++;
-                last_op_pos = NULL;
-            } else if (*p == '}') {
-                brace_depth--;
-                last_op_pos = NULL;
-            } else if (strncmp(p, "&&", 2) == 0) {
+                continue;
+            } else if (strncmp(p, "&&", 2) == 0 || strncmp(p, "||", 2) == 0) {
                 last_op_pos = p;
                 p++;
-            } else if (strncmp(p, "||", 2) == 0) {
-                last_op_pos = p;
-                p++;
-            } else if (*p == '|' || *p == '&') {
+            } else if (*p == '|' || *p == '&' || *p == '(') {
                 last_op_pos = p;
             } else if (*p == ';') {
                 last_op_pos = NULL;
-            } else {
+            } else if (!isspace((unsigned char)*p)) {
                 last_op_pos = NULL;
             }
-        } else {
-            if (*p == quote_char) {
-                bool escaped = false;
-                const char *rev = p - 1;
-                while (rev >= line && *rev == '\\') {
-                    escaped = !escaped;
-                    rev--;
-                }
-                if (!escaped) in_quotes = false;
-            }
         }
-        p++;
+        if (in_sq || in_dq) last_op_pos = NULL;
+        if (*p) p++;
     }
 
-    if (in_quotes || brace_depth > 0 || last_op_pos != NULL) return false;
+    if (in_sq || in_dq || brace_depth > 0 || last_op_pos != NULL) return false;
 
     Token *tokens = tokenize(line);
     if (!tokens) return true;
 
-    int if_depth = 0;
-    int case_depth = 0;
-    int loop_depth = 0;
+    int if_depth = 0, case_depth = 0, loop_depth = 0;
     for (Token *t = tokens; t && t->type != TOK_EOF; t = t->next) {
         if (t->type == TOK_IF) if_depth++;
-        if (t->type == TOK_FI) if_depth--;
-        if (t->type == TOK_CASE) case_depth++;
-        if (t->type == TOK_ESAC) case_depth--;
-        if (t->type == TOK_FOR || t->type == TOK_WHILE || t->type == TOK_UNTIL) loop_depth++;
-        if (t->type == TOK_DONE) loop_depth--;
+        else if (t->type == TOK_FI) if_depth--;
+        else if (t->type == TOK_CASE) case_depth++;
+        else if (t->type == TOK_ESAC) case_depth--;
+        else if (t->type == TOK_FOR || t->type == TOK_WHILE || t->type == TOK_UNTIL) loop_depth++;
+        else if (t->type == TOK_DONE) loop_depth--;
     }
-    
     free_tokens(tokens);
 
-    if (if_depth > 0 || case_depth > 0 || loop_depth > 0) return false;
-
+    if (if_depth != 0 || case_depth != 0 || loop_depth != 0) return false;
     return true;
 }

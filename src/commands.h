@@ -23,5 +23,9 @@ int cmd_test(int argc, char **argv);
 int cmd_bracket(int argc, char **argv);
 int cmd_set(int argc, char **argv);
 int cmd_exec(int argc, char **argv);
+int cmd_exit(int argc, char **argv);
+int cmd_eval(int argc, char **argv);
+int cmd_functions(int argc, char **argv);
+int cmd_delfunc(int argc, char **argv);
 
 #endif

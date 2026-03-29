@@ -16,6 +16,8 @@
 #include "commands.h"
 #include "signals.h"
 #include "functions.h"
+#include "parser.h"
+#include <sys/wait.h>
 
 char* expand_tilde(const char *path) {
     if (!path || strchr(path, '~') == NULL)
@@ -85,11 +87,75 @@ int split_args(const char *line, char *args[], int max_args) {
     int buf_i = 0;
     bool in_sq = false;
     bool in_dq = false;
+    bool sub_in_sq = false;
+    bool sub_in_dq = false;
+    int paren_depth = 0;
 
     while (*p) {
-        if (!in_sq && !in_dq && *p == '#' && (p == line || isspace(*(p-1)))) break;
+        if (!in_sq && !in_dq && paren_depth == 0) {
+            if (isspace((unsigned char)*p) || *p == '\x11') {
+                if (buf_i > 0) {
+                    buffer[buf_i] = '\0';
+                    args[argc++] = strdup(buffer);
+                    buf_i = 0;
+                }
+                while (*p && (isspace((unsigned char)*p) || *p == '\x11')) p++;
+                continue;
+            }
+            if (*p == '#' && (p == line || isspace((unsigned char)*(p-1)))) break;
+            if (*p == ';' || *p == '|' || *p == '&' || *p == '(' || *p == ')') {
+                if (buf_i > 0) {
+                    buffer[buf_i] = '\0';
+                    args[argc++] = strdup(buffer);
+                    buf_i = 0;
+                }
+                
+                
+                
+                
+                char op[3] = {*p, '\0', '\0'};
+                if ((*p == '&' && p[1] == '&') || (*p == '|' && p[1] == '|') || (*p == ';' && p[1] == ';')) {
+                    op[1] = p[1];
+                    p++;
+                }
+                args[argc++] = strdup(op);
+                p++;
+                continue;
+            }
+        }
+
         if (argc >= max_args - 1) break;
 
+        
+        if (!in_sq) {
+            if (*p == '$' && p[1] == '(') {
+                buffer[buf_i++] = *p++;
+                buffer[buf_i++] = *p++;
+                paren_depth++;
+                continue;
+            }
+        }
+
+        if (paren_depth > 0) {
+            if (*p == '\'') {
+                if (!sub_in_dq && (p == line || *(p-1) != '\\')) sub_in_sq = !sub_in_sq;
+            } else if (*p == '"') {
+                if (!sub_in_sq && (p == line || *(p-1) != '\\')) sub_in_dq = !sub_in_dq;
+            } else if (!sub_in_sq && !sub_in_dq) {
+                if (*p == '(') paren_depth++;
+                else if (*p == ')') {
+                    paren_depth--;
+                    if (paren_depth == 0) {
+                        sub_in_sq = false;
+                        sub_in_dq = false;
+                    }
+                }
+            }
+            buffer[buf_i++] = *p++;
+            continue;
+        }
+
+        
         if (!in_sq && !in_dq) {
             const char *peek = p;
             int fd_prefix = -1;
@@ -103,11 +169,9 @@ int split_args(const char *line, char *args[], int max_args) {
                     args[argc++] = strdup(buffer);
                     buf_i = 0;
                 }
-
                 char op_buf[16];
                 int op_j = 0;
                 if (fd_prefix != -1) op_buf[op_j++] = *p++;
-                
                 op_buf[op_j++] = *p++;
                 if ((*p == '<' || *p == '>' || *p == '&') && (*p == op_buf[op_j-1] || *p == '&')) {
                     op_buf[op_j++] = *p++;
@@ -116,15 +180,16 @@ int split_args(const char *line, char *args[], int max_args) {
                 args[argc++] = strdup(op_buf);
                 continue;
             }
+        }
 
+        
+        if (!in_sq && !in_dq) {
             if (*p == '\\') {
                 if (p[1]) {
                     buffer[buf_i++] = '\x10';
                     buffer[buf_i++] = p[1];
                     p += 2;
-                } else {
-                    p++;
-                }
+                } else p++;
                 continue;
             }
             if (*p == '\'') {
@@ -139,15 +204,6 @@ int split_args(const char *line, char *args[], int max_args) {
                 p++;
                 continue;
             }
-            if (isspace((unsigned char)*p)) {
-                if (buf_i > 0) {
-                    buffer[buf_i] = '\0';
-                    args[argc++] = strdup(buffer);
-                    buf_i = 0;
-                }
-                while (*p && isspace((unsigned char)*p)) p++;
-                continue;
-            }
             if (*p == '*' && (p == line || *(p-1) != '$')) { buffer[buf_i++] = '\x01'; p++; continue; }
             if (*p == '?' && (p == line || *(p-1) != '$')) { buffer[buf_i++] = '\x02'; p++; continue; }
             if (*p == '[') { buffer[buf_i++] = '\x03'; p++; continue; }
@@ -158,17 +214,13 @@ int split_args(const char *line, char *args[], int max_args) {
                 p++;
                 continue;
             }
-            buffer[buf_i++] = *p++;
-            continue;
         } else if (in_dq) {
             if (*p == '\\') {
                 if (p[1] == '$' || p[1] == '"' || p[1] == '\\' || p[1] == '`' || p[1] == '\n') {
                     buffer[buf_i++] = '\x10';
                     buffer[buf_i++] = p[1];
                     p += 2;
-                } else {
-                    buffer[buf_i++] = *p++;
-                }
+                } else buffer[buf_i++] = *p++;
                 continue;
             }
             if (*p == '"') {
@@ -177,8 +229,6 @@ int split_args(const char *line, char *args[], int max_args) {
                 p++;
                 continue;
             }
-            buffer[buf_i++] = *p++;
-            continue;
         }
 
         buffer[buf_i++] = *p++;
@@ -188,7 +238,6 @@ int split_args(const char *line, char *args[], int max_args) {
         buffer[buf_i] = '\0';
         args[argc++] = strdup(buffer);
     }
-
     args[argc] = NULL;
     return argc;
 }
@@ -265,7 +314,7 @@ void handle_redirection(char *args[], int *argc) {
                     printf("> ");
                     fflush(stdout);
                     if (!fgets(buf, sizeof(buf), stdin)) break;
-                    buf[strcspn(buf, "\n")] = 0;
+                    buf[strcspn(buf, "\r\n")] = 0;
                     if (strcmp(buf, target) == 0) break;
                     write(tmp_fd, buf, strlen(buf));
                     write(tmp_fd, "\n", 1);
@@ -365,156 +414,169 @@ void set_current_param_frame(int argc, char **argv) {
 
 char* expand_variables(const char *input) {
     if (!input) return NULL;
-    char buffer[8192];
-    int j = 0;
-    bool in_sq = false;
-    bool in_dq = false;
+    size_t res_size = 4096;
+    char *res = malloc(res_size);
+    if (!res) return NULL;
+    size_t j = 0;
+    bool in_sq = false, in_dq = false;
+    
+    void add_c(char c) {
+        if (j + 1 >= res_size) {
+            res_size *= 2;
+            char *nr = realloc(res, res_size);
+            if (!nr) return;
+            res = nr;
+        }
+        res[j++] = c;
+    }
+    
+    bool is_assignment = false;
+    const char *as_start = input;
+    while (*as_start == '\x04' || *as_start == '\x05' || *as_start == '\x06' || *as_start == '\x07') as_start++;
+    if (isalpha((unsigned char)as_start[0]) || as_start[0] == '_') {
+        int k = 1;
+        while (isalnum((unsigned char)as_start[k]) || as_start[k] == '_') k++;
+        if (as_start[k] == '=') is_assignment = true;
+    }
 
     for (int i = 0; input[i]; i++) {
-        if (input[i] == '\x04') { in_sq = true; buffer[j++] = input[i]; continue; }
-        if (input[i] == '\x05') { in_sq = false; buffer[j++] = input[i]; continue; }
-        if (input[i] == '\x06') { in_dq = true; buffer[j++] = input[i]; continue; }
-        if (input[i] == '\x07') { in_dq = false; buffer[j++] = input[i]; continue; }
-        if (input[i] == '\x10') { buffer[j++] = input[i++]; buffer[j++] = input[i]; continue; }
+        if (input[i] == '\x04') { in_sq = true; add_c(input[i]); continue; }
+        if (input[i] == '\x05') { in_sq = false; add_c(input[i]); continue; }
+        if (input[i] == '\x06') { in_dq = true; add_c(input[i]); continue; }
+        if (input[i] == '\x07') { in_dq = false; add_c(input[i]); continue; }
+        if (input[i] == '\x10') { add_c(input[i++]); add_c(input[i]); continue; }
 
         if (input[i] == '$' && !in_sq) {
-            i++;
-            char *val = NULL;
-            bool should_split = !in_dq;
-
-            if (input[i] == '\0' || isspace(input[i]) || input[i] == '"' || input[i] == '\'') {
-                if (j < 8191) buffer[j++] = '$';
-                i--;
+            if (input[i+1] == '(') {
+                i += 2;
+                int start_i = i, depth = 1;
+                bool inner_sq = false, inner_dq = false;
+                while (input[i] && depth > 0) {
+                    if (input[i] == '\'' && (i == 0 || input[i-1] != '\\') && !inner_dq) inner_sq = !inner_sq;
+                    else if (input[i] == '"' && (i == 0 || input[i-1] != '\\') && !inner_sq) inner_dq = !inner_dq;
+                    else if (!inner_sq && !inner_dq) {
+                        if (input[i] == '(') depth++;
+                        else if (input[i] == ')') depth--;
+                    }
+                    if (depth > 0) i++;
+                }
+                char *cmd = strndup(input + start_i, i - start_i);
+                int pipefd[2];
+                if (pipe(pipefd) == 0) {
+                    fflush(NULL);
+                    pid_t pid = fork();
+                    if (pid == 0) {
+                        close(pipefd[0]);
+                        dup2(pipefd[1], STDOUT_FILENO);
+                        close(pipefd[1]);
+                        exit(process_command_line(cmd));
+                    } else if (pid > 0) {
+                        close(pipefd[1]);
+                        size_t cap_size = 4096, cap_len = 0;
+                        char *cap = malloc(cap_size), r_buf[4096];
+                        ssize_t n;
+                        while ((n = read(pipefd[0], r_buf, sizeof(r_buf))) > 0) {
+                            if (cap_len + n >= cap_size) {
+                                cap_size *= 2;
+                                while(cap_len + n >= cap_size) cap_size *= 2;
+                                cap = realloc(cap, cap_size);
+                            }
+                            if (cap) { memcpy(cap + cap_len, r_buf, n); cap_len += n; }
+                        }
+                        if (cap) {
+                            cap[cap_len] = '\0';
+                            while (cap_len > 0 && (cap[cap_len-1] == '\n' || cap[cap_len-1] == '\r')) cap[--cap_len] = '\0';
+                            bool should_split = !in_dq && !is_assignment;
+                            for (size_t l = 0; cap[l]; l++) {
+                                char c = cap[l];
+                                if (should_split && isspace((unsigned char)c)) c = '\x11';
+                                add_c(c);
+                            }
+                            free(cap);
+                        }
+                        close(pipefd[0]);
+                        waitpid(pid, NULL, 0);
+                    }
+                }
+                free(cmd);
                 continue;
             }
 
+            i++;
+            char *val = NULL;
+            bool should_split = !in_dq && !is_assignment;
+            if (input[i] == '\0' || isspace((unsigned char)input[i]) || input[i] == '"' || input[i] == '\'') {
+                add_c('$'); i--; continue;
+            }
+
             if (input[i] == '?') {
-                char status_str[16];
-                snprintf(status_str, sizeof(status_str), "%d", last_exit_status);
-                val = strdup(status_str);
+                char sbuf[16]; snprintf(sbuf, 16, "%d", last_exit_status); val = strdup(sbuf);
             } else if (input[i] == '#') {
-                char count_str[16];
                 int count = param_stack ? param_stack->argc - 1 : 0;
-                if (count < 0) count = 0;
-                snprintf(count_str, sizeof(count_str), "%d", count);
-                val = strdup(count_str);
-            } else if (input[i] == '*' || input[i] == '@') {
-                if (param_stack && param_stack->argc > 1) {
-                    int len = 0;
-                    for (int k = 1; k < param_stack->argc; k++) len += strlen(param_stack->argv[k]) + 1;
-                    val = malloc(len + 1);
-                    val[0] = '\0';
-                    for (int k = 1; k < param_stack->argc; k++) {
-                        strcat(val, param_stack->argv[k]);
-                        if (k < param_stack->argc - 1) strcat(val, " ");
-                    }
-                }
-            } else if (isdigit(input[i])) {
+                char sbuf[16]; snprintf(sbuf, 16, "%d", count < 0 ? 0 : count); val = strdup(sbuf);
+            } else if (isdigit((unsigned char)input[i])) {
                 int idx = input[i] - '0';
-                if (param_stack && idx < param_stack->argc) {
-                    val = strdup(param_stack->argv[idx]);
-                }
+                if (param_stack && idx < param_stack->argc) val = strdup(param_stack->argv[idx]);
             } else if (input[i] == '{') {
                 i++;
-                char varname[128];
-                char op = 0;
-                char word[256];
-                word[0] = '\0';
+                char var[128], op = 0, word[256]; var[0] = word[0] = '\0';
                 int k = 0;
-                while (input[i] && input[i] != '}' && input[i] != ':' && input[i] != '-' && input[i] != '=' && input[i] != '?' && input[i] != '+' && k < 127) {
-                    varname[k++] = input[i++];
-                }
-                varname[k] = '\0';
-                
-                bool check_null = false;
-                if (input[i] == ':') {
-                    check_null = true;
-                    i++;
-                }
-
-                if (input[i] == '-' || input[i] == '=' || input[i] == '?' || input[i] == '+') {
+                while (input[i] && input[i] != '}' && !strchr(":-=?+", input[i]) && k < 127) var[k++] = input[i++];
+                var[k] = '\0';
+                bool check_null = (input[i] == ':');
+                if (check_null) i++;
+                if (strchr("-=?+", input[i])) {
                     op = input[i++];
                     int w = 0;
-                    while (input[i] && input[i] != '}' && w < 255) {
-                        word[w++] = input[i++];
-                    }
+                    while (input[i] && input[i] != '}' && w < 255) word[w++] = input[i++];
                     word[w] = '\0';
-                } else {
-                    while (input[i] && input[i] != '}') i++;
                 }
-                if (input[i] == '}') i++;
-                
-                char *env_val = NULL;
-                if (isdigit(varname[0])) {
-                    int idx = atoi(varname);
-                    if (param_stack && idx < param_stack->argc) env_val = param_stack->argv[idx];
-                } else {
-                    env_val = getenv(varname);
-                }
-                
-                bool is_set = (env_val != NULL);
-                bool is_null = (env_val != NULL && env_val[0] == '\0');
-                bool use_default = check_null ? (!is_set || is_null) : !is_set;
-                
-                if (op == 0) {
-                    if (env_val) val = strdup(env_val);
-                } else if (op == '-') {
-                    if (!use_default) val = strdup(env_val ? env_val : "");
-                    else val = expand_variables(word);
-                } else if (op == '=') {
-                    if (!use_default) val = strdup(env_val ? env_val : "");
-                    else {
-                        val = expand_variables(word);
-                        setenv(varname, val ? val : "", 1);
-                    }
+                while (input[i] && input[i] != '}') i++;
+                char *ev = NULL;
+                if (isdigit((unsigned char)var[0])) {
+                    int idx = atoi(var);
+                    if (param_stack && idx < param_stack->argc) ev = param_stack->argv[idx];
+                } else ev = getenv(var);
+                bool is_set = (ev != NULL), is_null = (ev && !*ev);
+                bool use_def = check_null ? (!is_set || is_null) : !is_set;
+                if (op == 0) { if (ev) val = strdup(ev); } 
+                else if (op == '-') val = use_def ? expand_variables(word) : strdup(ev?ev:"");
+                else if (op == '=') {
+                    if (use_def) { val = expand_variables(word); setenv(var, val?val:"", 1); }
+                    else val = strdup(ev?ev:"");
                 } else if (op == '?') {
-                    if (!use_default) val = strdup(env_val ? env_val : "");
-                    else {
-                        char *exp_word = expand_variables(word);
-                        fprintf(stderr, "%s: %s\n", varname, (exp_word && exp_word[0]) ? exp_word : "parameter null or not set");
-                        free(exp_word);
-                        exit(1);
-                    }
-                } else if (op == '+') {
-                    if (!use_default) val = expand_variables(word);
-                    else val = NULL;
-                }
-                i--;
-            } else if (isalnum(input[i]) || input[i] == '_') {
-                char varname[128];
-                int k = 0;
-                while ((isalnum(input[i]) || input[i]=='_') && k < 127) varname[k++] = input[i++];
-                varname[k] = '\0';
-                i--;
-                char *env = getenv(varname);
-                if (env) val = strdup(env);
+                    if (use_def) {
+                        char *ew = expand_variables(word);
+                        fprintf(stderr, "%s: %s\n", var, (ew && *ew)?ew:"parameter null or not set");
+                        free(ew); exit(1);
+                    } else val = strdup(ev?ev:"");
+                } else if (op == '+') val = use_def ? NULL : expand_variables(word);
             } else {
-                if (j < 8191) buffer[j++] = '$';
-                i--;
-                continue;
+                int start_v = i;
+                while (isalnum((unsigned char)input[i]) || input[i] == '_') i++;
+                char *var = strndup(input + start_v, i - start_v);
+                char *ev = getenv(var); if (ev) val = strdup(ev);
+                free(var); i--;
             }
 
             if (val) {
                 for (int l = 0; val[l]; l++) {
-                    if (j < 8191) {
-                        if (should_split && isspace(val[l])) buffer[j++] = '\x11';
-                        else if (should_split && (val[l] == '*' || val[l] == '?' || val[l] == '[')) {
-                            if (val[l] == '*') buffer[j++] = '\x01';
-                            else if (val[l] == '?') buffer[j++] = '\x02';
-                            else if (val[l] == '[') buffer[j++] = '\x03';
-                        }
-                        else buffer[j++] = val[l];
+                    char c = val[l];
+                    if (should_split && isspace((unsigned char)c)) c = '\x11';
+                    else if (should_split && strchr("*?[", c)) {
+                        if (c == '*') add_c('\x01');
+                        else if (c == '?') add_c('\x02');
+                        else if (c == '[') add_c('\x03');
+                        continue;
                     }
+                    add_c(c);
                 }
                 free(val);
             }
-        } else {
-            if (j < 8191) buffer[j++] = input[i];
-        }
+        } else add_c(input[i]);
     }
-
-    buffer[j] = '\0';
-    return strdup(buffer);
+    add_c('\0');
+    return res;
 }
 
 void quote_removal(char *args[], int argc) {
