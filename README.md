@@ -1,5 +1,5 @@
 # CVX (Compact Virtual eXecutor) is a simple, lightweight shell written in C, designed to be fast, flexible, and pleasant to use.
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/JHXStudioriginal/CVX-Shell?color=blue) ![License](https://img.shields.io/badge/license-EOSL--V3-orange)
+![CI Status](https://github.com/JHXStudioriginal/CVX-Shell/actions/workflows/ci.yml/badge.svg) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/JHXStudioriginal/CVX-Shell?color=blue) ![License](https://img.shields.io/badge/license-EOSL--V3-orange)
 
 
 ### Features:
