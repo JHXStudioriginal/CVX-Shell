@@ -1,49 +1,45 @@
 # CVX (Compact Virtual eXecutor) is a simple, lightweight shell written in C, designed to be fast, flexible, and pleasant to use.
-![CI Status](https://github.com/JHXStudioriginal/CVX-Shell/actions/workflows/ci.yml/badge.svg) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/JHXStudioriginal/CVX-Shell?color=blue) ![License](https://img.shields.io/badge/license-EOSL--V3-orange)
+
+<p align="left">
+  <img src="https://github.com/JHXStudioriginal/CVX-Shell/actions/workflows/ci.yml/badge.svg" alt="CI Status">
+  <img src="https://img.shields.io/github/v/release/JHXStudioriginal/CVX-Shell?color=blue" alt="GitHub release">
+  <img src="https://img.shields.io/badge/license-EOSL--V3-orange" alt="License">
+</p>
 
 
-### Features:
+
+### 🚀 Features:
 * Runs **normal Linux commands**, supports **pipes** and **redirections** (`>`, `>>`, `<`, `<<` heredoc)
 * Supports **conditional statements** (`if`/`else`) and **loops** (`for`, `while`, `until`)
-* Built-in commands:
-  - `cd [dir]` - Change directory (supports `~`)
-  - `pwd [-L|-P|--help]` - Print working directory (logical/physical)
-  - `help` - Show this help message
-  - `ls` - List directory contents (auto `--color=auto`)
-  - `history` - Show command history
-  - `alias [<name>=<cmd>]` - Create a command alias
-  - `unalias [name]` - Remove the specified alias
-  - `echo [args]` - Display text (supports environment variables)
-  - `export [VAR=value]` - Set environment variables
-  - `jobs` - List background jobs
-  - `fg` - Resume job in foreground
-  - `bg` - Resume job in background
-  - `functions` - List all defined functions
-  - `delfunc [name]` - Delete the specified function
-  - `break [n]` - Exit from within a for, while, or until loop
-  - `continue [n]` - Resume the next iteration of an enclosing loop
-  - `:` - Null command (returns 0 exit status)
-  - `exec [command] [args]` - Replace the shell with the specified command
-  - `exit` - Exit the shell
 * Command chaining with `&&` and `||`
 * Pipelines with `|`
-* Aliases & config:
-  - Custom prompt, startup dir, history toggle via `/etc/cvx.conf`
-  - More in [wiki](https://github.com/JHXStudioriginal/CVX-Shell/wiki/Configuration)
-* Arguments:
-  - `cvx --version`, `cvx -v`, `cvx -version` shows shell version
-  - `cvx -c "<command>"` run it and exit
-  - `cvx -l` loads `/etc/profile` and `~/.profile`
-* Tiny, fast C implementation
-* Line editing powered by [linenoise](https://github.com/antirez/linenoise)
+* Tiny, fast C implementation with line editing powered by [linenoise](https://github.com/antirez/linenoise)
+
+### 🛠 Built-in commands:
+
+| Category | Commands |
+| :--- | :--- |
+| **Filesystem** | `cd`, `pwd`, `ls` |
+| **Process** | `jobs`, `fg`, `bg`, `exec`, `exit` |
+| **Variables** | `export`, `alias`, `unalias`, `echo` |
+| **Scripting** | `break`, `continue`, `:`, `functions`, `delfunc` |
+| **Utility** | `help`, `history` |
+
+### ⚙️ Arguments:
+* `cvx --version`, `cvx -v`, `cvx -version` — shows shell version
+* `cvx -c "<command>"` — run specified command and exit
+* `cvx -l` — loads `/etc/profile` and `~/.profile`
+
+### 📂 Configuration:
+* Custom prompt, startup dir, and history toggle via `/etc/cvx.conf` and `~/.cvx.conf`
+
+---
 
 ###### See [wiki](https://github.com/JHXStudioriginal/CVX-Shell/wiki) on project page to read more.
 
-### Installation:
+### 💻 Installation:
 
 Using Git + Make
-
-1. Clone the repository:
 
 ```
 git clone https://github.com/JHXStudioriginal/CVX-Shell.git
