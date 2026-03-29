@@ -1,4 +1,6 @@
 # CVX (Compact Virtual eXecutor) is a simple, lightweight shell written in C, designed to be fast, flexible, and pleasant to use.
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/JHXStudioriginal/CVX-Shell?color=blue) ![GitHub License](https://img.shields.io/github/license/JHXStudioriginal/CVX-Shell?color=orange)
+
 
 ### Features:
 * Runs **normal Linux commands**, supports **pipes** and **redirections** (`>`, `>>`, `<`, `<<` heredoc)
