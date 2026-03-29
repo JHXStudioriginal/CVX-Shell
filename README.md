@@ -1,10 +1,10 @@
-<img src="cvx-logo.png" alt="CVX Logo" width="120" align="right">
-<p>&nbsp;</p>
+
 
 <h1 align="center">CVX <small>(Compact Virtual eXecutor)</small></h1>
 
 <p align="center">
   <strong>is a simple, lightweight shell written in C, designed to be fast, flexible, and pleasant to use.</strong>
+  <img src="cvx-logo.png" alt="CVX Logo" width="120" align="right">
 </p>
 
 <p align="center">
