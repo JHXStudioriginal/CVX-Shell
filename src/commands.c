@@ -448,7 +448,7 @@ int cmd_test(int argc, char **argv) {
     }
     
     if (argc == 4) {
-        if (strcmp(argv[2], "=") == 0) return (strcmp(argv[1], argv[3]) == 0) ? 0 : 1;
+        if (strcmp(argv[2], "=") == 0 || strcmp(argv[2], "==") == 0) return (strcmp(argv[1], argv[3]) == 0) ? 0 : 1;
         if (strcmp(argv[2], "!=") == 0) return (strcmp(argv[1], argv[3]) != 0) ? 0 : 1;
         
         char *end1, *end2;

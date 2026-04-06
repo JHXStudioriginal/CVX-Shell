@@ -19,6 +19,41 @@
 #include "parser.h"
 #include <sys/wait.h>
 
+static long get_val(const char **p) {
+    while (**p && isspace((unsigned char)**p)) (*p)++;
+    if (isdigit((unsigned char)**p)) {
+        char *endptr;
+        long val = strtol(*p, &endptr, 10);
+        *p = endptr;
+        return val;
+    } else if (isalpha((unsigned char)**p) || **p == '_') {
+        char var[128];
+        int k = 0;
+        while ((isalnum((unsigned char)**p) || **p == '_') && k < 127) var[k++] = *(*p)++;
+        var[k] = '\0';
+        char *ev = getenv(var);
+        return ev ? atol(ev) : 0;
+    }
+    return 0;
+}
+
+static long evaluate_arithmetic(const char *expr) {
+    if (!expr) return 0;
+    const char *p = expr;
+    long res = get_val(&p);
+    while (*p) {
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (!*p) break;
+        char op = *p++;
+        long next = get_val(&p);
+        if (op == '+') res += next;
+        else if (op == '-') res -= next;
+        else if (op == '*') res *= next;
+        else if (op == '/' && next != 0) res /= next;
+    }
+    return res;
+}
+
 char* expand_tilde(const char *path) {
     if (!path || strchr(path, '~') == NULL)
         return path ? strdup(path) : NULL;
@@ -447,6 +482,28 @@ char* expand_variables(const char *input) {
         if (input[i] == '\x10') { add_c(input[i++]); add_c(input[i]); continue; }
 
         if (input[i] == '$' && !in_sq) {
+            if (input[i+1] == '(' && input[i+2] == '(') {
+                i += 3;
+                int start_i = i, depth = 1;
+                while (input[i] && depth > 0) {
+                    if (input[i] == '(') depth++;
+                    else if (input[i] == ')') {
+                        depth--;
+                        if (depth == 0 && input[i+1] == ')') { i++; break; }
+                        else if (depth == 0) break; 
+                    }
+                    i++;
+                }
+                char *expr_raw = strndup(input + start_i, i - start_i);
+                char *expr_expanded = expand_variables(expr_raw);
+                long res_val = evaluate_arithmetic(expr_expanded);
+                char sbuf[32];
+                snprintf(sbuf, sizeof(sbuf), "%ld", res_val);
+                for (int l = 0; sbuf[l]; l++) add_c(sbuf[l]);
+                free(expr_raw);
+                free(expr_expanded);
+                continue;
+            }
             if (input[i+1] == '(') {
                 i += 2;
                 int start_i = i, depth = 1;
