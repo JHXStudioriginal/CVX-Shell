@@ -447,23 +447,30 @@ void set_current_param_frame(int argc, char **argv) {
     }
 }
 
+typedef struct {
+    char **res;
+    size_t *j;
+    size_t *res_size;
+} ExpandCtx;
+
+static void add_c(ExpandCtx *ctx, char c) {
+    if (*(ctx->j) + 1 >= *(ctx->res_size)) {
+        *(ctx->res_size) *= 2;
+        char *nr = realloc(*(ctx->res), *(ctx->res_size));
+        if (!nr) return;
+        *(ctx->res) = nr;
+    }
+    (*(ctx->res))[(*(ctx->j))++] = c;
+}
+
 char* expand_variables(const char *input) {
     if (!input) return NULL;
     size_t res_size = 4096;
     char *res = malloc(res_size);
     if (!res) return NULL;
     size_t j = 0;
+    ExpandCtx ectx = { &res, &j, &res_size };
     bool in_sq = false, in_dq = false;
-    
-    void add_c(char c) {
-        if (j + 1 >= res_size) {
-            res_size *= 2;
-            char *nr = realloc(res, res_size);
-            if (!nr) return;
-            res = nr;
-        }
-        res[j++] = c;
-    }
     
     bool is_assignment = false;
     const char *as_start = input;
@@ -475,11 +482,11 @@ char* expand_variables(const char *input) {
     }
 
     for (int i = 0; input[i]; i++) {
-        if (input[i] == '\x04') { in_sq = true; add_c(input[i]); continue; }
-        if (input[i] == '\x05') { in_sq = false; add_c(input[i]); continue; }
-        if (input[i] == '\x06') { in_dq = true; add_c(input[i]); continue; }
-        if (input[i] == '\x07') { in_dq = false; add_c(input[i]); continue; }
-        if (input[i] == '\x10') { add_c(input[i++]); add_c(input[i]); continue; }
+        if (input[i] == '\x04') { in_sq = true;  add_c(&ectx, input[i]); continue; }
+        if (input[i] == '\x05') { in_sq = false; add_c(&ectx, input[i]); continue; }
+        if (input[i] == '\x06') { in_dq = true;  add_c(&ectx, input[i]); continue; }
+        if (input[i] == '\x07') { in_dq = false; add_c(&ectx, input[i]); continue; }
+        if (input[i] == '\x10') { add_c(&ectx, input[i++]); if(input[i]) add_c(&ectx, input[i]); continue; }
 
         if (input[i] == '$' && !in_sq) {
             if (input[i+1] == '(' && input[i+2] == '(') {
@@ -490,7 +497,6 @@ char* expand_variables(const char *input) {
                     else if (input[i] == ')') {
                         depth--;
                         if (depth == 0 && input[i+1] == ')') { i++; break; }
-                        else if (depth == 0) break; 
                     }
                     i++;
                 }
@@ -499,7 +505,7 @@ char* expand_variables(const char *input) {
                 long res_val = evaluate_arithmetic(expr_expanded);
                 char sbuf[32];
                 snprintf(sbuf, sizeof(sbuf), "%ld", res_val);
-                for (int l = 0; sbuf[l]; l++) add_c(sbuf[l]);
+                for (int l = 0; sbuf[l]; l++) add_c(&ectx, sbuf[l]);
                 free(expr_raw);
                 free(expr_expanded);
                 continue;
@@ -535,7 +541,6 @@ char* expand_variables(const char *input) {
                         while ((n = read(pipefd[0], r_buf, sizeof(r_buf))) > 0) {
                             if (cap_len + n >= cap_size) {
                                 cap_size *= 2;
-                                while(cap_len + n >= cap_size) cap_size *= 2;
                                 cap = realloc(cap, cap_size);
                             }
                             if (cap) { memcpy(cap + cap_len, r_buf, n); cap_len += n; }
@@ -547,7 +552,7 @@ char* expand_variables(const char *input) {
                             for (size_t l = 0; cap[l]; l++) {
                                 char c = cap[l];
                                 if (should_split && isspace((unsigned char)c)) c = '\x11';
-                                add_c(c);
+                                add_c(&ectx, c);
                             }
                             free(cap);
                         }
@@ -562,8 +567,9 @@ char* expand_variables(const char *input) {
             i++;
             char *val = NULL;
             bool should_split = !in_dq && !is_assignment;
+            
             if (input[i] == '\0' || isspace((unsigned char)input[i]) || input[i] == '"' || input[i] == '\'') {
-                add_c('$'); i--; continue;
+                add_c(&ectx, '$'); i--; continue;
             }
 
             if (input[i] == '?') {
@@ -594,8 +600,10 @@ char* expand_variables(const char *input) {
                     int idx = atoi(var);
                     if (param_stack && idx < param_stack->argc) ev = param_stack->argv[idx];
                 } else ev = getenv(var);
+                
                 bool is_set = (ev != NULL), is_null = (ev && !*ev);
                 bool use_def = check_null ? (!is_set || is_null) : !is_set;
+                
                 if (op == 0) { if (ev) val = strdup(ev); } 
                 else if (op == '-') val = use_def ? expand_variables(word) : strdup(ev?ev:"");
                 else if (op == '=') {
@@ -621,18 +629,20 @@ char* expand_variables(const char *input) {
                     char c = val[l];
                     if (should_split && isspace((unsigned char)c)) c = '\x11';
                     else if (should_split && strchr("*?[", c)) {
-                        if (c == '*') add_c('\x01');
-                        else if (c == '?') add_c('\x02');
-                        else if (c == '[') add_c('\x03');
+                        if (c == '*') add_c(&ectx, '\x01');
+                        else if (c == '?') add_c(&ectx, '\x02');
+                        else if (c == '[') add_c(&ectx, '\x03');
                         continue;
                     }
-                    add_c(c);
+                    add_c(&ectx, c);
                 }
                 free(val);
             }
-        } else add_c(input[i]);
+        } else {
+            add_c(&ectx, input[i]);
+        }
     }
-    add_c('\0');
+    add_c(&ectx, '\0');
     return res;
 }
 
