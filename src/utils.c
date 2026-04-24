@@ -3,6 +3,7 @@
 // All original author information and file headers must be preserved.
 // For full license text, see: [https://github.com/JHXStudioriginal/Elasna-License/blob/main/LICENSE]
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
