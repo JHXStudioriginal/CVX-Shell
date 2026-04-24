@@ -10,17 +10,29 @@
 #include <ctype.h>
 #include "lexer.h"
 
-Token *tokenize(const char *line) {
-    Token *head = NULL, *tail = NULL;
-    void add_tok(TokenType t, const char *val, int len) {
-        Token *tok = calloc(1, sizeof(Token));
-        tok->type = t;
-        if (val) tok->val = strndup(val, len);
-        if (!head) head = tail = tok;
-        else { tail->next = tok; tail = tok; }
-    }
+typedef struct {
+    Token *head;
+    Token *tail;
+} LexerCtx;
 
+static void add_tok(LexerCtx *ctx, TokenType t, const char *val, int len) {
+    Token *tok = calloc(1, sizeof(Token));
+    if (!tok) return; // Zawsze warto sprawdzić przy calloc
+    tok->type = t;
+    if (val) tok->val = strndup(val, len);
+    
+    if (!ctx->head) {
+        ctx->head = ctx->tail = tok;
+    } else {
+        ctx->tail->next = tok;
+        ctx->tail = tok;
+    }
+}
+
+Token *tokenize(const char *line) {
+    LexerCtx ctx = {NULL, NULL};
     const char *p = line;
+
     while (*p) {
         while (*p == ' ' || *p == '\t') p++;
         if (!*p) break;
@@ -30,14 +42,14 @@ Token *tokenize(const char *line) {
             continue;
         }
 
-        if (strncmp(p, "&&", 2) == 0) { add_tok(TOK_AND, NULL, 0); p += 2; continue; }
-        if (strncmp(p, "||", 2) == 0) { add_tok(TOK_OR, NULL, 0); p += 2; continue; }
-        if (strncmp(p, ";;", 2) == 0) { add_tok(TOK_DSEMI, NULL, 0); p += 2; continue; }
-        if (*p == '|') { add_tok(TOK_PIPE, NULL, 0); p++; continue; }
-        if (*p == '&') { add_tok(TOK_AMP, NULL, 0); p++; continue; }
-        if (*p == '(') { add_tok(TOK_LPAREN, NULL, 0); p++; continue; }
-        if (*p == ')') { add_tok(TOK_RPAREN, NULL, 0); p++; continue; }
-        if (*p == '!') { add_tok(TOK_BANG, "!", 1); p++; continue; }
+        if (strncmp(p, "&&", 2) == 0) { add_tok(&ctx, TOK_AND, NULL, 0); p += 2; continue; }
+        if (strncmp(p, "||", 2) == 0) { add_tok(&ctx, TOK_OR, NULL, 0); p += 2; continue; }
+        if (strncmp(p, ";;", 2) == 0) { add_tok(&ctx, TOK_DSEMI, NULL, 0); p += 2; continue; }
+        if (*p == '|') { add_tok(&ctx, TOK_PIPE, NULL, 0); p++; continue; }
+        if (*p == '&') { add_tok(&ctx, TOK_AMP, NULL, 0); p++; continue; }
+        if (*p == '(') { add_tok(&ctx, TOK_LPAREN, NULL, 0); p++; continue; }
+        if (*p == ')') { add_tok(&ctx, TOK_RPAREN, NULL, 0); p++; continue; }
+        if (*p == '!') { add_tok(&ctx, TOK_BANG, "!", 1); p++; continue; }
 
         if (*p == '{') {
             const char *start = p + 1;
@@ -67,15 +79,15 @@ Token *tokenize(const char *line) {
                 p++;
             }
             if (p > start) {
-                add_tok(TOK_BLOCK, start, p - start);
+                add_tok(&ctx, TOK_BLOCK, start, p - start);
             }
             if (*p == '}') p++;
             continue;
         }
 
         if (*p == '\n' || *p == ';') {
-            if (!tail || tail->type != TOK_SEMI) {
-                add_tok(TOK_SEMI, NULL, 0);
+            if (!ctx.tail || ctx.tail->type != TOK_SEMI) {
+                add_tok(&ctx, TOK_SEMI, NULL, 0);
             }
             while (*p == '\n' || *p == ';' || *p == ' ' || *p == '\t') p++;
             continue;
@@ -99,7 +111,6 @@ Token *tokenize(const char *line) {
                 } else if (*p == ')' && p_depth > 0) {
                     p_depth--;
                 } else if (p_depth == 0) {
-                    
                     if (*p == ' ' || *p == '\t' || *p == '\n' ||
                         *p == ';' || *p == '|' || *p == '&' ||
                         *p == '(' || *p == ')' || *p == '{' || *p == '}') break;
@@ -141,15 +152,16 @@ Token *tokenize(const char *line) {
             else if (strcmp(s, "until") == 0) t = TOK_UNTIL;
             else if (strcmp(s, "do") == 0) t = TOK_DO;
             else if (strcmp(s, "done") == 0) t = TOK_DONE;
-            add_tok(t, s, p - start);
+            add_tok(&ctx, t, s, p - start);
             free(s);
         } else {
             p++;
         }
     }
-    add_tok(TOK_EOF, NULL, 0);
-    return head;
+    add_tok(&ctx, TOK_EOF, NULL, 0);
+    return ctx.head;
 }
+
 
 void free_tokens(Token *head) {
     while(head) {
