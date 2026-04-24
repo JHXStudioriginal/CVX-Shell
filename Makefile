@@ -2,7 +2,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
-LDFLAGS = -lm -s
+LDFLAGS = -s
 
 SRC = src/main.c src/config.c src/commands.c src/prompt.c src/exec.c src/signals.c src/linenoise.c src/parser.c src/ast.c src/lexer.c src/utils.c src/jobs.c src/functions.c
 OBJ_DIR = obj
