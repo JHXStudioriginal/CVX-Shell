@@ -208,7 +208,7 @@ int cmd_help(int argc, char **argv) {
     printf("  help                    - Show this help message\n");
     printf("  ls                      - List directory contents (auto --color=auto)\n");
     printf("  history                 - Show command history\n");
-    printf("  alias [<name>=<cmd>]    - Create a command alias\n");
+    printf("  alias [<name>-<command>]    - Create a command alias\n");
     printf("  unalias [name]          - Remove the specified alias\n");
     printf("  echo [args]             - Display text (supports environment variables)\n");
     printf("  export [VAR=value]      - Set environment variables\n");
