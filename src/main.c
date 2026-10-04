@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 JHXStudioriginal
-// This file is part of the Elasna Open Source License v3.
+// This file is part of the GNU General Public License v3.
 // All original author information and file headers must be preserved.
 // For full license text, see: [https://github.com/JHXStudioriginal/Elasna-License/blob/main/LICENSE]
 
@@ -189,7 +189,7 @@ int main(int argc, char *argv[]) {
          strcmp(argv[1], "-version") == 0)) {
         printf("CVX Shell beta 0.9\n");
         printf("Copyright (C) 2025-2026 JHX Studio's\n");
-        printf("License: Elasna Open Source License v3\n");
+        printf("License: GNU General Public License v3\n");
         return 0;
     }
 
