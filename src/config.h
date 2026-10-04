@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 JHXStudioriginal
-// This file is part of the Elasna Open Source License v3.
+// This file is part of the GNU General Public License v3
 // All original author information and file headers must be preserved.
-// For full license text, see: [https://github.com/JHXStudioriginal/Elasna-License/blob/main/LICENSE]
+// For full license text, see: [https://github.com/JHXStudioriginal/CVX-Shell/blob/main/LICENSE]
 
 
 #ifndef CONFIG_H

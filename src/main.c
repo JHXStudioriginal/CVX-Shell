@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 JHXStudioriginal
 // This file is part of the GNU General Public License v3.
 // All original author information and file headers must be preserved.
-// For full license text, see: [https://github.com/JHXStudioriginal/Elasna-License/blob/main/LICENSE]
+// For full license text, see: [https://github.com/JHXStudioriginal/CVX-Shell/blob/main/LICENSE]
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +44,49 @@ static void load_profile(const char *path) {
         }
         fclose(f);
     }
+}
+
+static char *preprocess_pasted_lines(const char *input) {
+    size_t in_len = strlen(input);
+    char *result = malloc(in_len + 1);
+    if (!result) return NULL;
+    
+    size_t r = 0, i = 0;
+    while (i < in_len) {
+        size_t line_start = i;
+        while (i < in_len && input[i] != '\n' && input[i] != '\r') {
+            i++;
+        }
+        size_t line_len = i - line_start;
+        
+        size_t check = line_len;
+        while (check > 0 && (input[line_start + check - 1] == ' ' || input[line_start + check - 1] == '\t')) {
+            check--;
+        }
+        
+        int ends_with_backslash = (check > 0 && input[line_start + check - 1] == '\\');
+        
+        if (ends_with_backslash) {
+            size_t copy_len = check - 1;
+            while (copy_len > 0 && (input[line_start + copy_len - 1] == ' ' || input[line_start + copy_len - 1] == '\t')) {
+                copy_len--;
+            }
+            memcpy(result + r, input + line_start, copy_len);
+            r += copy_len;
+        } else {
+            memcpy(result + r, input + line_start, line_len);
+            r += line_len;
+            if (i < in_len) {
+                result[r++] = '\n';
+            }
+        }
+        
+        while (i < in_len && (input[i] == '\n' || input[i] == '\r')) {
+            i++;
+        }
+    }
+    result[r] = '\0';
+    return result;
 }
 
 static char *collect_heredocs(const char *cmd) {
@@ -274,6 +317,10 @@ int main(int argc, char *argv[]) {
                 if (full_line) free(full_line);
                 goto end_shell;
             }
+
+            char *processed = preprocess_pasted_lines(line);
+            free(line);
+            line = processed;
 
             char *p = line + strlen(line);
             while (p > line && (*(p-1) == ' ' || *(p-1) == '\t')) p--;
