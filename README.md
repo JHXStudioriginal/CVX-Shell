@@ -10,7 +10,7 @@
 <p align="center">
   <img src="https://github.com/JHXStudioriginal/CVX-Shell/actions/workflows/ci.yml/badge.svg" alt="CI Status">
   <img src="https://img.shields.io/github/v/release/JHXStudioriginal/CVX-Shell?color=blue" alt="GitHub release">
-  <img src="https://img.shields.io/badge/license-EOSL--V3-orange" alt="License">
+  <img src="https://img.shields.io/badge/license-GNU GPL--V3-orange" alt="License">
 </p>
 
 
