@@ -14,6 +14,7 @@ typedef enum {
     TOK_OR,
     TOK_PIPE,
     TOK_SEMI,
+    TOK_NEWLINE,
     TOK_AMP,
     TOK_LPAREN,
     TOK_RPAREN,

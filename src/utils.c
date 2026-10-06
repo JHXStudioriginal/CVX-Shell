@@ -12,12 +12,14 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <glob.h>
+#include <fnmatch.h>
 #include "utils.h"
 #include "config.h"
 #include "commands.h"
 #include "signals.h"
 #include "functions.h"
 #include "parser.h"
+#include "jobs.h"
 #include <sys/wait.h>
 
 static long get_val(const char **p) {
@@ -38,21 +40,64 @@ static long get_val(const char **p) {
     return 0;
 }
 
+static long parse_expr(const char **p);
+
+static long parse_primary(const char **p) {
+    while (**p && isspace((unsigned char)**p)) (*p)++;
+    if (**p == '(') {
+        (*p)++;
+        long val = parse_expr(p);
+        while (**p && isspace((unsigned char)**p)) (*p)++;
+        if (**p == ')') (*p)++;
+        return val;
+    }
+    if (**p == '+' || **p == '-') {
+        char op = *(*p)++;
+        long val = parse_primary(p);
+        return (op == '-') ? -val : val;
+    }
+    return get_val(p);
+}
+
+static long parse_term(const char **p) {
+    long val = parse_primary(p);
+    while (1) {
+        while (**p && isspace((unsigned char)**p)) (*p)++;
+        char op = **p;
+        if (op == '*' || op == '/' || op == '%') {
+            (*p)++;
+            long next = parse_primary(p);
+            if (op == '*') val *= next;
+            else if (op == '/' && next != 0) val /= next;
+            else if (op == '%' && next != 0) val %= next;
+        } else {
+            break;
+        }
+    }
+    return val;
+}
+
+static long parse_expr(const char **p) {
+    long val = parse_term(p);
+    while (1) {
+        while (**p && isspace((unsigned char)**p)) (*p)++;
+        char op = **p;
+        if (op == '+' || op == '-') {
+            (*p)++;
+            long next = parse_term(p);
+            if (op == '+') val += next;
+            else if (op == '-') val -= next;
+        } else {
+            break;
+        }
+    }
+    return val;
+}
+
 static long evaluate_arithmetic(const char *expr) {
     if (!expr) return 0;
     const char *p = expr;
-    long res = get_val(&p);
-    while (*p) {
-        while (*p && isspace((unsigned char)*p)) p++;
-        if (!*p) break;
-        char op = *p++;
-        long next = get_val(&p);
-        if (op == '+') res += next;
-        else if (op == '-') res -= next;
-        else if (op == '*') res *= next;
-        else if (op == '/' && next != 0) res /= next;
-    }
-    return res;
+    return parse_expr(&p);
 }
 
 char* expand_tilde(const char *path) {
@@ -448,6 +493,23 @@ void set_current_param_frame(int argc, char **argv) {
     }
 }
 
+int shift_param_frame(int n) {
+    if (!param_stack) return 1;
+    int cur_num = param_stack->argc - 1;
+    if (cur_num < 0) cur_num = 0;
+    if (n < 0 || n > cur_num) return 1;
+    if (n == 0) return 0;
+
+    for (int i = 1; i <= n; i++) {
+        free(param_stack->argv[i]);
+    }
+    for (int i = 1; i + n < param_stack->argc; i++) {
+        param_stack->argv[i] = param_stack->argv[i + n];
+    }
+    param_stack->argc -= n;
+    return 0;
+}
+
 typedef struct {
     char **res;
     size_t *j;
@@ -578,19 +640,45 @@ char* expand_variables(const char *input) {
             } else if (input[i] == '#') {
                 int count = param_stack ? param_stack->argc - 1 : 0;
                 char sbuf[16]; snprintf(sbuf, 16, "%d", count < 0 ? 0 : count); val = strdup(sbuf);
+            } else if (input[i] == '$') {
+                char sbuf[32]; snprintf(sbuf, sizeof(sbuf), "%d", getpid()); val = strdup(sbuf);
+            } else if (input[i] == '!') {
+                char sbuf[32]; snprintf(sbuf, sizeof(sbuf), "%d", jobs_last_pgid()); val = strdup(sbuf);
+            } else if (input[i] == '@' || input[i] == '*') {
+                size_t tlen = 0;
+                int count = param_stack ? param_stack->argc : 0;
+                for (int p_i = 1; p_i < count; p_i++) tlen += strlen(param_stack->argv[p_i]) + 1;
+                val = malloc(tlen + 1);
+                if (val) {
+                    val[0] = '\0';
+                    for (int p_i = 1; p_i < count; p_i++) {
+                        strcat(val, param_stack->argv[p_i]);
+                        if (p_i < count - 1) strcat(val, " ");
+                    }
+                }
             } else if (isdigit((unsigned char)input[i])) {
                 int idx = input[i] - '0';
                 if (param_stack && idx < param_stack->argc) val = strdup(param_stack->argv[idx]);
             } else if (input[i] == '{') {
                 i++;
+                bool is_len = false;
+                if (input[i] == '#' && input[i+1] != '}' && !strchr(":-=?+#%", input[i+1])) {
+                    is_len = true;
+                    i++;
+                }
                 char var[128], op = 0, word[256]; var[0] = word[0] = '\0';
+                bool double_op = false;
                 int k = 0;
-                while (input[i] && input[i] != '}' && !strchr(":-=?+", input[i]) && k < 127) var[k++] = input[i++];
+                while (input[i] && input[i] != '}' && !strchr(":-=?+#%", input[i]) && k < 127) var[k++] = input[i++];
                 var[k] = '\0';
                 bool check_null = (input[i] == ':');
                 if (check_null) i++;
-                if (strchr("-=?+", input[i])) {
+                if (strchr("-=?+#%", input[i])) {
                     op = input[i++];
+                    if (input[i] == op && (op == '#' || op == '%')) {
+                        double_op = true;
+                        i++;
+                    }
                     int w = 0;
                     while (input[i] && input[i] != '}' && w < 255) word[w++] = input[i++];
                     word[w] = '\0';
@@ -602,21 +690,66 @@ char* expand_variables(const char *input) {
                     if (param_stack && idx < param_stack->argc) ev = param_stack->argv[idx];
                 } else ev = getenv(var);
                 
-                bool is_set = (ev != NULL), is_null = (ev && !*ev);
-                bool use_def = check_null ? (!is_set || is_null) : !is_set;
-                
-                if (op == 0) { if (ev) val = strdup(ev); } 
-                else if (op == '-') val = use_def ? expand_variables(word) : strdup(ev?ev:"");
-                else if (op == '=') {
-                    if (use_def) { val = expand_variables(word); setenv(var, val?val:"", 1); }
-                    else val = strdup(ev?ev:"");
-                } else if (op == '?') {
-                    if (use_def) {
-                        char *ew = expand_variables(word);
-                        fprintf(stderr, "%s: %s\n", var, (ew && *ew)?ew:"parameter null or not set");
-                        free(ew); exit(1);
-                    } else val = strdup(ev?ev:"");
-                } else if (op == '+') val = use_def ? NULL : expand_variables(word);
+                if (is_len) {
+                    char sbuf[32];
+                    snprintf(sbuf, sizeof(sbuf), "%zu", ev ? strlen(ev) : 0);
+                    val = strdup(sbuf);
+                } else {
+                    bool is_set = (ev != NULL), is_null = (ev && !*ev);
+                    bool use_def = check_null ? (!is_set || is_null) : !is_set;
+                    
+                    if (op == 0) { if (ev) val = strdup(ev); } 
+                    else if (op == '-') val = use_def ? expand_variables(word) : strdup(ev?ev:"");
+                    else if (op == '=') {
+                        if (use_def) { val = expand_variables(word); setenv(var, val?val:"", 1); }
+                        else val = strdup(ev?ev:"");
+                    } else if (op == '?') {
+                        if (use_def) {
+                            char *ew = expand_variables(word);
+                            fprintf(stderr, "%s: %s\n", var, (ew && *ew)?ew:"parameter null or not set");
+                            free(ew); exit(1);
+                        } else val = strdup(ev?ev:"");
+                    } else if (op == '+') val = use_def ? NULL : expand_variables(word);
+                    else if (op == '#' || op == '%') {
+                        if (!ev) val = strdup("");
+                        else {
+                            char *pat = expand_variables(word);
+                            int vlen = strlen(ev);
+                            if (op == '#') {
+                                int match_len = -1;
+                                if (!double_op) {
+                                    for (int m = 0; m <= vlen; m++) {
+                                        char sub[512];
+                                        strncpy(sub, ev, m); sub[m] = '\0';
+                                        if (fnmatch(pat, sub, 0) == 0) { match_len = m; break; }
+                                    }
+                                } else {
+                                    for (int m = vlen; m >= 0; m--) {
+                                        char sub[512];
+                                        strncpy(sub, ev, m); sub[m] = '\0';
+                                        if (fnmatch(pat, sub, 0) == 0) { match_len = m; break; }
+                                    }
+                                }
+                                if (match_len >= 0) val = strdup(ev + match_len);
+                                else val = strdup(ev);
+                            } else {
+                                int match_len = -1;
+                                if (!double_op) {
+                                    for (int m = 0; m <= vlen; m++) {
+                                        if (fnmatch(pat, ev + vlen - m, 0) == 0) { match_len = m; break; }
+                                    }
+                                } else {
+                                    for (int m = vlen; m >= 0; m--) {
+                                        if (fnmatch(pat, ev + vlen - m, 0) == 0) { match_len = m; break; }
+                                    }
+                                }
+                                if (match_len >= 0) val = strndup(ev, vlen - match_len);
+                                else val = strdup(ev);
+                            }
+                            free(pat);
+                        }
+                    }
+                }
             } else {
                 int start_v = i;
                 while (isalnum((unsigned char)input[i]) || input[i] == '_') i++;

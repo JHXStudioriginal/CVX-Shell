@@ -86,10 +86,19 @@ Token *tokenize(const char *line) {
         }
 
         if (*p == '\n' || *p == ';') {
-            if (!ctx.tail || ctx.tail->type != TOK_SEMI) {
-                add_tok(&ctx, TOK_SEMI, NULL, 0);
+            if (*p == '\n') {
+                if (!ctx.tail || (ctx.tail->type != TOK_NEWLINE && ctx.tail->type != TOK_SEMI)) {
+                    add_tok(&ctx, TOK_NEWLINE, NULL, 0);
+                }
+                p++;
+            } else {
+                if (ctx.tail && ctx.tail->type == TOK_NEWLINE) {
+                    ctx.tail->type = TOK_SEMI;
+                } else if (!ctx.tail || ctx.tail->type != TOK_SEMI) {
+                    add_tok(&ctx, TOK_SEMI, NULL, 0);
+                }
+                p++;
             }
-            while (*p == '\n' || *p == ';' || *p == ' ' || *p == '\t') p++;
             continue;
         }
 
@@ -201,6 +210,7 @@ char *concat_tokens(Token *start, Token *end) {
             else if (t->type == TOK_OR) strcat(res, "||");
             else if (t->type == TOK_PIPE) strcat(res, "|");
             else if (t->type == TOK_SEMI) strcat(res, ";");
+            else if (t->type == TOK_NEWLINE) strcat(res, "\n");
             else if (t->type == TOK_AMP) strcat(res, "&");
             else if (t->type == TOK_DSEMI) strcat(res, ";;");
         }
@@ -213,16 +223,17 @@ bool is_block_complete(const char *line) {
     if (!line) return true;
 
     int brace_depth = 0;
+    int paren_depth = 0;
     bool in_sq = false;
     bool in_dq = false;
+    bool in_bt = false;
     const char *p = line;
-    const char *last_op_pos = NULL;
 
     while (*p) {
         if (!in_sq && *p == '\\') {
             p++;
-            if (*p) p++;
-            last_op_pos = NULL;
+            if (!*p) return false;
+            p++;
             continue;
         }
 
@@ -230,73 +241,53 @@ bool is_block_complete(const char *line) {
             if (*p == '\'') in_sq = false;
         } else if (in_dq) {
             if (*p == '"') in_dq = false;
+            else if (*p == '`') in_bt = !in_bt;
+        } else if (in_bt) {
+            if (*p == '`') in_bt = false;
         } else {
-            if (*p == '\'') { in_sq = true; last_op_pos = NULL; }
-            else if (*p == '"') { in_dq = true; last_op_pos = NULL; }
+            if (*p == '\'') in_sq = true;
+            else if (*p == '"') in_dq = true;
+            else if (*p == '`') in_bt = true;
             else if (*p == '{') brace_depth++;
-            else if (*p == '}') brace_depth--;
-            else if (strncmp(p, "<<", 2) == 0 && *(p+2) != '<' && *(p+2) != '>') {
-                const char *q = p + 2;
-                while (*q == ' ' || *q == '\t') q++;
-                if (*q == '-') { q++; while (*q == ' ' || *q == '\t') q++; }
-                bool qdel = (*q == '\'' || *q == '"');
-                char qch = qdel ? *q++ : 0;
-                char delim[64] = {0};
-                int di = 0;
-                while (*q && di < 63) {
-                    if (qdel && *q == qch) { q++; break; }
-                    if (!qdel && (*q == ' ' || *q == '\t' || *q == '\n' ||
-                        *q == ';' || *q == '|' || *q == '&' || *q == ')')) break;
-                    delim[di++] = *q++;
-                }
-                p = q;
-                while (*p && *p != '\n') p++;
-                if (*p == '\n') {
-                    p++;
-                    while (*p) {
-                        const char *sol = p;
-                        while (*p && *p != '\n') p++;
-                        size_t ll = (size_t)(p - sol);
-                        if (ll == strlen(delim) && strncmp(sol, delim, ll) == 0) {
-                            if (*p == '\n') p++;
-                            break;
-                        }
-                        if (*p == '\n') p++;
-                    }
-                }
-                last_op_pos = NULL;
-                continue;
-            } else if (strncmp(p, "&&", 2) == 0 || strncmp(p, "||", 2) == 0) {
-                last_op_pos = p;
-                p++;
-            } else if (*p == '|' || *p == '&' || *p == '(') {
-                last_op_pos = p;
-            } else if (*p == ';') {
-                last_op_pos = NULL;
-            } else if (!isspace((unsigned char)*p)) {
-                last_op_pos = NULL;
-            }
+            else if (*p == '}') { if (brace_depth > 0) brace_depth--; }
+            else if (*p == '(') paren_depth++;
+            else if (*p == ')') { if (paren_depth > 0) paren_depth--; }
         }
-        if (in_sq || in_dq) last_op_pos = NULL;
-        if (*p) p++;
+        p++;
     }
 
-    if (in_sq || in_dq || brace_depth > 0 || last_op_pos != NULL) return false;
+    if (in_sq || in_dq || in_bt || brace_depth > 0 || paren_depth > 0) return false;
+
+    const char *end = line + strlen(line) - 1;
+    while (end >= line && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
+    if (end >= line) {
+        if (*end == '|' || *end == '&' || *end == '\\') return false;
+    }
 
     Token *tokens = tokenize(line);
     if (!tokens) return true;
 
     int if_depth = 0, case_depth = 0, loop_depth = 0;
+    TokenType last_type = TOK_EOF;
+
     for (Token *t = tokens; t && t->type != TOK_EOF; t = t->next) {
         if (t->type == TOK_IF) if_depth++;
-        else if (t->type == TOK_FI) if_depth--;
+        else if (t->type == TOK_FI) { if (if_depth > 0) if_depth--; }
         else if (t->type == TOK_CASE) case_depth++;
-        else if (t->type == TOK_ESAC) case_depth--;
+        else if (t->type == TOK_ESAC) { if (case_depth > 0) case_depth--; }
         else if (t->type == TOK_FOR || t->type == TOK_WHILE || t->type == TOK_UNTIL) loop_depth++;
-        else if (t->type == TOK_DONE) loop_depth--;
+        else if (t->type == TOK_DONE) { if (loop_depth > 0) loop_depth--; }
+        if (t->type != TOK_NEWLINE) last_type = t->type;
     }
     free_tokens(tokens);
 
     if (if_depth != 0 || case_depth != 0 || loop_depth != 0) return false;
+
+    if (last_type == TOK_THEN || last_type == TOK_DO || last_type == TOK_ELSE ||
+        last_type == TOK_ELIF || last_type == TOK_IN || last_type == TOK_AND ||
+        last_type == TOK_OR || last_type == TOK_PIPE) {
+        return false;
+    }
+
     return true;
 }

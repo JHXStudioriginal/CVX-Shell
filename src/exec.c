@@ -145,17 +145,27 @@ int exec_command(char *cmdline, bool background) {
         else if (!strcmp(args[0], "functions")) builtin_status = cmd_functions(argc, args);
         else if (!strcmp(args[0], "delfunc")) builtin_status = cmd_delfunc(argc, args);
         else if (!strcmp(args[0], "set")) builtin_status = cmd_set(argc, args);
+        else if (!strcmp(args[0], "read")) builtin_status = cmd_read(argc, args);
+        else if (!strcmp(args[0], "unset")) builtin_status = cmd_unset(argc, args);
+        else if (!strcmp(args[0], "trap")) builtin_status = cmd_trap(argc, args);
+        else if (!strcmp(args[0], "type") || !strcmp(args[0], "which")) builtin_status = cmd_type(argc, args);
         else if (!strcmp(args[0], "break")) { loop_control = 1; builtin_status = 0; }
         else if (!strcmp(args[0], "continue")) { loop_control = 2; builtin_status = 0; }
-        else if (!strcmp(args[0], ":")) builtin_status = 0;
+        else if (!strcmp(args[0], "shift")) builtin_status = cmd_shift(argc, args);
+        else if (!strcmp(args[0], "umask")) builtin_status = cmd_umask(argc, args);
         else if (!strcmp(args[0], "exit")) builtin_status = cmd_exit(argc, args);
         else if (!strcmp(args[0], "eval")) builtin_status = cmd_eval(argc, args);
 
         if (builtin_status != -1) {
             last_exit_status = builtin_status;
+            if (opt_errexit && last_exit_status != 0) exit(last_exit_status);
             free_args(args, argc);
             return last_exit_status;
         }
+    }
+
+    if (opt_xtrace) {
+        fprintf(stderr, "+ %s\n", cmdline);
     }
 
     pid_t pid = fork();
@@ -202,6 +212,7 @@ int exec_command(char *cmdline, bool background) {
 
     free_args(args, argc);
     last_exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 0);
+    if (opt_errexit && last_exit_status != 0) exit(last_exit_status);
     return last_exit_status;
 }
 
@@ -321,6 +332,10 @@ int execute_pipeline(char **cmds, int n, bool background) {
             else if (!strcmp(args[0], "functions")) builtin_status = cmd_functions(argc, args);
             else if (!strcmp(args[0], "delfunc")) builtin_status = cmd_delfunc(argc, args);
             else if (!strcmp(args[0], "set")) builtin_status = cmd_set(argc, args);
+            else if (!strcmp(args[0], "read")) builtin_status = cmd_read(argc, args);
+            else if (!strcmp(args[0], "unset")) builtin_status = cmd_unset(argc, args);
+            else if (!strcmp(args[0], "trap")) builtin_status = cmd_trap(argc, args);
+            else if (!strcmp(args[0], "type") || !strcmp(args[0], "which")) builtin_status = cmd_type(argc, args);
             else if (!strcmp(args[0], "break")) { loop_control = 1; builtin_status = 0; }
             else if (!strcmp(args[0], "continue")) { loop_control = 2; builtin_status = 0; }
             else if (!strcmp(args[0], ":")) builtin_status = 0;

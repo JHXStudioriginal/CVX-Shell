@@ -12,6 +12,18 @@
 #include "ast.h"
 #include "parser.h"
 
+static void skip_newlines(Token **token) {
+    while ((*token)->type == TOK_NEWLINE) {
+        consume(token);
+    }
+}
+
+static void skip_separators(Token **token) {
+    while ((*token)->type == TOK_SEMI || (*token)->type == TOK_NEWLINE) {
+        consume(token);
+    }
+}
+
 static ASTNode *parse_command(Token **token);
 static ASTNode *parse_pipeline(Token **token);
 static ASTNode *parse_and_or(Token **token);
@@ -23,21 +35,28 @@ static ASTNode *parse_while_until(Token **token, bool is_until);
 
 static ASTNode *parse_if_inner(Token **token, bool expect_fi) {
     consume(token);
+    skip_newlines(token);
     ASTNode *cond = parse_sequence(token);
+    skip_newlines(token);
     if (!match(token, TOK_THEN)) {
-        fprintf(stderr, "syntax error: expected 'then'\n");
+        fprintf(stderr, "cvx_shell: syntax error: expected 'then'\n");
+        free_ast(cond);
         return NULL;
     }
+    skip_newlines(token);
     ASTNode *then_branch = parse_sequence(token);
+    skip_newlines(token);
     ASTNode *else_branch = NULL;
     if ((*token)->type == TOK_ELIF) {
         else_branch = parse_if_inner(token, false);
     } else if (match(token, TOK_ELSE)) {
+        skip_newlines(token);
         else_branch = parse_sequence(token);
     }
+    skip_newlines(token);
     
     if (expect_fi && !match(token, TOK_FI)) {
-        fprintf(stderr, "syntax error: expected 'fi'\n");
+        fprintf(stderr, "cvx_shell: syntax error: expected 'fi'\n");
     }
     
     ASTNode *node = calloc(1, sizeof(*node));
@@ -54,9 +73,11 @@ static ASTNode *parse_if(Token **token) {
 
 static ASTNode *parse_case(Token **token) {
     consume(token);
+    skip_newlines(token);
     if ((*token)->type != TOK_STR) return NULL;
     char *word = strdup((*token)->val);
     consume(token);
+    skip_newlines(token);
     if (!match(token, TOK_IN)) {
         free(word);
         return NULL;
@@ -66,13 +87,22 @@ static ASTNode *parse_case(Token **token) {
     root->cmd = word;
     ASTNode **next_item = &root->left;
 
+    skip_newlines(token);
+
     while ((*token)->type != TOK_ESAC && (*token)->type != TOK_EOF) {
-        Token *p_start = *token;
-        while ((*token)->type != TOK_RPAREN && (*token)->type != TOK_EOF) {
+        if ((*token)->type == TOK_LPAREN) {
             consume(token);
         }
+        
+        Token *p_start = *token;
+        while ((*token)->type != TOK_RPAREN && (*token)->type != TOK_EOF && (*token)->type != TOK_ESAC) {
+            consume(token);
+        }
+        if ((*token)->type != TOK_RPAREN) break;
+
         char *pattern = concat_tokens(p_start, *token);
-        consume(token);
+        consume(token); // consume ')'
+        skip_newlines(token);
         
         ASTNode *body = parse_sequence(token);
         
@@ -83,23 +113,34 @@ static ASTNode *parse_case(Token **token) {
         *next_item = item;
         next_item = &item->right;
         
-        if ((*token)->type == TOK_DSEMI) consume(token);
-        else if ((*token)->type == TOK_ESAC) break;
+        skip_newlines(token);
+        if ((*token)->type == TOK_DSEMI) {
+            consume(token);
+            skip_newlines(token);
+        } else if ((*token)->type == TOK_ESAC) {
+            break;
+        }
     }
+    skip_newlines(token);
     match(token, TOK_ESAC);
     return root;
 }
 
 static ASTNode *parse_while_until(Token **token, bool is_until) {
     consume(token);
+    skip_newlines(token);
     ASTNode *cond = parse_sequence(token);
+    skip_newlines(token);
     if (!match(token, TOK_DO)) {
-        fprintf(stderr, "syntax error: expected 'do'\n");
+        fprintf(stderr, "cvx_shell: syntax error: expected 'do'\n");
+        free_ast(cond);
         return NULL;
     }
+    skip_newlines(token);
     ASTNode *body = parse_sequence(token);
+    skip_newlines(token);
     if (!match(token, TOK_DONE)) {
-        fprintf(stderr, "syntax error: expected 'done'\n");
+        fprintf(stderr, "cvx_shell: syntax error: expected 'done'\n");
     }
     ASTNode *node = calloc(1, sizeof(*node));
     node->type = is_until ? AST_UNTIL : AST_WHILE;
@@ -110,43 +151,51 @@ static ASTNode *parse_while_until(Token **token, bool is_until) {
 
 static ASTNode *parse_for(Token **token) {
     consume(token);
+    skip_newlines(token);
     if ((*token)->type != TOK_STR) {
-        fprintf(stderr, "syntax error: expected variable name\n");
+        fprintf(stderr, "cvx_shell: syntax error: expected variable name\n");
         return NULL;
     }
     char *var_name = strdup((*token)->val);
     consume(token);
+    skip_newlines(token);
+
     ASTNode *node = calloc(1, sizeof(*node));
     node->type = AST_FOR;
     node->name = var_name;
 
     if ((*token)->type == TOK_IN) {
         consume(token);
+        skip_newlines(token);
         Token *start = *token;
-        while ((*token)->type != TOK_SEMI && (*token)->type != TOK_EOF && (*token)->type != TOK_DO) {
+        while ((*token)->type != TOK_SEMI && (*token)->type != TOK_NEWLINE &&
+               (*token)->type != TOK_EOF && (*token)->type != TOK_DO) {
             consume(token);
         }
         node->cmd = concat_tokens(start, *token);
-        if ((*token)->type == TOK_SEMI) consume(token);
-    } else if ((*token)->type == TOK_SEMI) {
-        consume(token);
-        node->cmd = strdup("\"$@\"");
+        if ((*token)->type == TOK_SEMI || (*token)->type == TOK_NEWLINE) {
+            consume(token);
+        }
     } else {
         node->cmd = strdup("\"$@\"");
     }
+    skip_newlines(token);
 
     if (!match(token, TOK_DO)) {
-        fprintf(stderr, "syntax error: expected 'do'\n");
+        fprintf(stderr, "cvx_shell: syntax error: expected 'do'\n");
         return node;
     }
+    skip_newlines(token);
     node->left = parse_sequence(token);
+    skip_newlines(token);
     if (!match(token, TOK_DONE)) {
-        fprintf(stderr, "syntax error: expected 'done'\n");
+        fprintf(stderr, "cvx_shell: syntax error: expected 'done'\n");
     }
     return node;
 }
 
 static ASTNode *parse_command(Token **token) {
+    skip_newlines(token);
     if ((*token)->type == TOK_IF) return parse_if(token);
     if ((*token)->type == TOK_CASE) return parse_case(token);
     if ((*token)->type == TOK_WHILE) return parse_while_until(token, false);
@@ -155,9 +204,12 @@ static ASTNode *parse_command(Token **token) {
 
     if ((*token)->type == TOK_LPAREN) {
         consume(token);
+        skip_newlines(token);
         ASTNode *inner = parse_sequence(token);
+        skip_newlines(token);
         if (!match(token, TOK_RPAREN)) {
             fprintf(stderr, "cvx_shell: syntax error: expected ')'\n");
+            free_ast(inner);
             return NULL;
         }
         ASTNode *node = calloc(1, sizeof(*node));
@@ -187,15 +239,11 @@ static ASTNode *parse_command(Token **token) {
                        (end->type >= TOK_IF && end->type <= TOK_DONE) ||
                        end->type == TOK_LPAREN || end->type == TOK_RPAREN ||
                        end->type == TOK_IN)) {
-            
-            
-            
-            if (end->type == TOK_SEMI || end->type == TOK_PIPE || end->type == TOK_AND || end->type == TOK_OR || end->type == TOK_AMP || end->type == TOK_DSEMI) break;
-            
+            if (end->type == TOK_SEMI || end->type == TOK_NEWLINE || end->type == TOK_PIPE ||
+                end->type == TOK_AND || end->type == TOK_OR || end->type == TOK_AMP ||
+                end->type == TOK_DSEMI) break;
             
             if (end->type == TOK_LPAREN || end->type == TOK_RPAREN) {
-                 
-                 
                  break; 
             }
             end = end->next;
@@ -211,16 +259,18 @@ static ASTNode *parse_command(Token **token) {
 }
 
 static ASTNode *parse_pipeline(Token **token) {
+    skip_newlines(token);
     bool negate = false;
     if ((*token)->type == TOK_BANG) {
         negate = true;
         consume(token);
+        skip_newlines(token);
     }
     ASTNode *left = parse_command(token);
     if (!left) return NULL;
     while ((*token)->type == TOK_PIPE) {
         consume(token);
-        while ((*token)->type == TOK_SEMI) consume(token);
+        skip_separators(token);
         ASTNode *right = parse_command(token);
         if (!right) break;
         ASTNode *node = calloc(1, sizeof(*node));
@@ -239,12 +289,13 @@ static ASTNode *parse_pipeline(Token **token) {
 }
 
 static ASTNode *parse_and_or(Token **token) {
+    skip_newlines(token);
     ASTNode *left = parse_pipeline(token);
     if (!left) return NULL;
     while ((*token)->type == TOK_AND || (*token)->type == TOK_OR) {
         TokenType op = (*token)->type;
         consume(token);
-        while ((*token)->type == TOK_SEMI) consume(token);
+        skip_separators(token);
         ASTNode *right = parse_pipeline(token);
         if (!right) break;
         ASTNode *node = calloc(1, sizeof(*node));
@@ -257,9 +308,7 @@ static ASTNode *parse_and_or(Token **token) {
 }
 
 static ASTNode *parse_sequence(Token **token) {
-    while ((*token)->type == TOK_SEMI) {
-        consume(token);
-    }
+    skip_separators(token);
     
     ASTNode *left = parse_and_or(token);
     if (!left) {
@@ -276,7 +325,7 @@ static ASTNode *parse_sequence(Token **token) {
     
     bool is_sequence = false;
     
-    while ((*token)->type == TOK_AMP || (*token)->type == TOK_SEMI) {
+    while ((*token)->type == TOK_AMP || (*token)->type == TOK_SEMI || (*token)->type == TOK_NEWLINE) {
         bool is_bg = ((*token)->type == TOK_AMP);
         consume(token);
         
@@ -325,6 +374,10 @@ ASTNode* parse_ast(const char *line) {
     Token *ptr = tokens;
     ASTNode *ast = parse_sequence(&ptr);
     
+    if (ptr && ptr->type != TOK_EOF) {
+        skip_newlines(&ptr);
+    }
+
     if (ptr && ptr->type != TOK_EOF) {
         fprintf(stderr, "cvx_shell: syntax error near '%s'\n", ptr->val ? ptr->val : "EOF");
         free_ast(ast);

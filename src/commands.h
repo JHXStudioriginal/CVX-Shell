@@ -27,5 +27,14 @@ int cmd_exit(int argc, char **argv);
 int cmd_eval(int argc, char **argv);
 int cmd_functions(int argc, char **argv);
 int cmd_delfunc(int argc, char **argv);
+int cmd_read(int argc, char **argv);
+int cmd_unset(int argc, char **argv);
+int cmd_trap(int argc, char **argv);
+int cmd_type(int argc, char **argv);
+int cmd_shift(int argc, char **argv);
+int cmd_umask(int argc, char **argv);
+
+extern int opt_errexit;
+extern int opt_xtrace;
 
 #endif

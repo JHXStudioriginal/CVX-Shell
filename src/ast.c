@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <fnmatch.h>
 
 #include "ast.h"
 #include "exec.h"
@@ -41,6 +42,30 @@ static int get_pipeline_cmds(ASTNode *node, char *cmds[], int max_cmds) {
         return n;
     }
     return 0;
+}
+
+static char *expand_and_unquote(const char *input) {
+    if (!input) return NULL;
+    char *args[16];
+    int count = split_args(input, args, 16);
+    if (count == 0) return strdup("");
+    for (int i = 0; i < count; i++) {
+        char *expanded = expand_variables(args[i]);
+        free(args[i]);
+        args[i] = expanded;
+    }
+    quote_removal(args, count);
+    int len = 0;
+    for (int i = 0; i < count; i++) len += strlen(args[i]) + 1;
+    char *res = malloc(len + 1);
+    if (!res) { free_args(args, count); return NULL; }
+    res[0] = '\0';
+    for (int i = 0; i < count; i++) {
+        strcat(res, args[i]);
+        if (i < count - 1) strcat(res, " ");
+    }
+    free_args(args, count);
+    return res;
 }
 
 int execute_ast(ASTNode *node, bool background) {
@@ -97,20 +122,20 @@ int execute_ast(ASTNode *node, bool background) {
             return 0;
         }
         case AST_CASE: {
-            char *expanded_word = expand_variables(node->cmd);
+            char *expanded_word = expand_and_unquote(node->cmd);
             ASTNode *item = node->left;
             while (item) {
                 bool match = false;
-                char *expanded_pattern = expand_variables(item->cmd);
-                if (strcmp(expanded_pattern, "*") == 0) match = true;
-                else {
+                char *expanded_pattern = expand_and_unquote(item->cmd);
+                if (expanded_pattern && strcmp(expanded_pattern, "*") == 0) match = true;
+                else if (expanded_pattern && expanded_word) {
                     char *p_copy = strdup(expanded_pattern);
                     char *tok = strtok(p_copy, "|");
                     while (tok) {
-                        while (*tok == ' ') tok++;
+                        while (*tok == ' ' || *tok == '\t' || *tok == '\n') tok++;
                         char *end = tok + strlen(tok) - 1;
-                        while (end > tok && *end == ' ') { *end = '\0'; end--; }
-                        if (strcmp(tok, expanded_word) == 0) { match = true; break; }
+                        while (end > tok && (*end == ' ' || *end == '\t' || *end == '\n')) { *end = '\0'; end--; }
+                        if (strcmp(tok, expanded_word) == 0 || fnmatch(tok, expanded_word, 0) == 0) { match = true; break; }
                         tok = strtok(NULL, "|");
                     }
                     free(p_copy);

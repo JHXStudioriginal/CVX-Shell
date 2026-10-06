@@ -51,6 +51,12 @@ int jobs_last_id(void) {
     return jobs[job_count - 1].id;
 }
 
+pid_t jobs_last_pgid(void) {
+    if (job_count == 0)
+        return 0;
+    return jobs[job_count - 1].pgid;
+}
+
 void jobs_cleanup(void) {
     for (int i = 0; i < job_count; ) {
         int status;
